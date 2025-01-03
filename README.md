@@ -2,7 +2,7 @@
 
 ## Features
 
-This project implements a simple graphical application for file encryption and decryption using the Camellia algorithm. The graphical interface is made with PyQt5, and the encryption/decryption code uses the `cryptography` library.
+This project implements a simple graphical application for file encryption and decryption using the Camellia algorithm. The graphical interface is made with PySide6, and the encryption/decryption code uses the `cryptography` library.
 
 ### Features
 
@@ -18,21 +18,21 @@ Make sure you have the following dependencies installed:
 -Python 3.x
 - Python Libraries:
   - `cryptography`
-  - `PyQt5`
+  - `PySide6`
 
 ### Install Dependencies on Linux
 
 ```sh
 sudo apt update
 sudo apt install python3 python3-pip
-pip install cryptography pyqt5 
+pip install cryptography PySide6 python-dotenv
 ```
 
 ### Install Dependencies on Windows and MacOS
 
 ```sh
 brew install python3
-pip3 install cryptography pyqt5
+pip3 install cryptography PySide6 python-dotenv
 ```
 
 ### How to run on Linux, MacOS or Windows
@@ -40,5 +40,5 @@ pip3 install cryptography pyqt5
 ```sh
 git clone https://github.com/user/repositorio.git
 cd repository
-python3 crypt.py
+python3 main.py
 ```
