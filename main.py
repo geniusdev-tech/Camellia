@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout, 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QShortcut, QKeySequence
 from login import UserAuth
-from logic import generate_file_hash, process_file, process_folder
+from login import generate_file_hash, process_file, process_folder
 
 class EncryptDecryptApp(QWidget):
     def __init__(self):
@@ -13,6 +13,7 @@ class EncryptDecryptApp(QWidget):
         self.user_info = None
         self.initUI()
         self.createShortcuts()
+        self.disable_file_processing()
     
     def createShortcuts(self):
         QShortcut(QKeySequence('Ctrl+O'), self).activated.connect(self.browse_file)
@@ -66,10 +67,10 @@ class EncryptDecryptApp(QWidget):
         self.browse_folder_button.clicked.connect(self.browse_folder)
         
         self.encrypt_radio = QRadioButton('Criptografar', self)
-        self.encrypt_radio.setIcon(QIcon('closed_lock_icon.png'))
+        self.encrypt_radio.setIcon(QIcon('img/closed_lock_icon.png'))
         
         self.decrypt_radio = QRadioButton('Descriptografar', self)
-        self.decrypt_radio.setIcon(QIcon('open_lock_icon.png'))
+        self.decrypt_radio.setIcon(QIcon('img/open_lock_icon.png'))
         
         self.encrypt_radio.setChecked(True)
         
@@ -95,18 +96,6 @@ class EncryptDecryptApp(QWidget):
         main_layout.addWidget(file_group)
         
         self.setLayout(main_layout)
-        
-        # Inicialmente, desabilitar componentes
-        self.enable_components(False)
-    
-    def enable_components(self, enable):
-        self.file_path_display.setEnabled(enable)
-        self.folder_path_display.setEnabled(enable)
-        self.browse_file_button.setEnabled(enable)
-        self.browse_folder_button.setEnabled(enable)
-        self.encrypt_radio.setEnabled(enable)
-        self.decrypt_radio.setEnabled(enable)
-        self.process_button.setEnabled(enable)
     
     def browse_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, 'Selecionar Arquivo')
@@ -122,10 +111,6 @@ class EncryptDecryptApp(QWidget):
         self.progress_bar.setValue(value)
     
     def process(self):
-        if not self.user_info:
-            QMessageBox.warning(self, "Atenção", "Por favor, faça o login para usar a aplicação!")
-            return
-        
         file_path = self.file_path_display.text()
         folder_path = self.folder_path_display.text()
         password = self.password_entry.text().encode()
@@ -150,27 +135,46 @@ class EncryptDecryptApp(QWidget):
     
     def login(self):
         email = self.email_entry.text()
-        password = self.auth.hash_password(self.password_entry.text())
+        password = self.password_entry.text()
         
         user = self.auth.login(email, password)
         
         if user:
             self.user_info = user
+            self.enable_file_processing()
             QMessageBox.information(self, "Sucesso", f"Bem-vindo, {user['email']}!")
-            self.enable_components(True)  # Habilitar componentes após login bem-sucedido
         else:
             QMessageBox.critical(self, "Erro", "Email ou senha incorretos.")
     
     def register(self):
         email = self.email_entry.text()
-        password = self.auth.hash_password(self.password_entry.text())
+        password = self.password_entry.text()
         
         message = self.auth.register(email, password)
         if "sucesso" in message.lower():
             QMessageBox.information(self, "Sucesso", message)
-            self.enable_components(True)  # Habilitar componentes após registro bem-sucedido
         else:
             QMessageBox.warning(self, "Atenção", message)
+    
+    def disable_file_processing(self):
+        self.file_path_display.setEnabled(False)
+        self.folder_path_display.setEnabled(False)
+        self.browse_file_button.setEnabled(False)
+        self.browse_folder_button.setEnabled(False)
+        self.encrypt_radio.setEnabled(False)
+        self.decrypt_radio.setEnabled(False)
+        self.process_button.setEnabled(False)
+        self.progress_bar.setEnabled(False)
+    
+    def enable_file_processing(self):
+        self.file_path_display.setEnabled(True)
+        self.folder_path_display.setEnabled(True)
+        self.browse_file_button.setEnabled(True)
+        self.browse_folder_button.setEnabled(True)
+        self.encrypt_radio.setEnabled(True)
+        self.decrypt_radio.setEnabled(True)
+        self.process_button.setEnabled(True)
+        self.progress_bar.setEnabled(True)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
