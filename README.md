@@ -34,11 +34,3 @@ pip install cryptography PySide6 python-dotenv
 brew install python3
 pip3 install cryptography PySide6 python-dotenv
 ```
-
-### How to run on Linux, MacOS or Windows
-
-```sh
-git clone https://github.com/user/repositorio.git
-cd repository
-python3 main.py
-```

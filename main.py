@@ -1,10 +1,10 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout, QFileDialog,
-                               QLineEdit, QLabel, QRadioButton, QMessageBox, QFormLayout, QHBoxLayout, QProgressBar, QGroupBox)
-from PySide6.QtCore import Qt
+                               QLineEdit, QLabel, QRadioButton, QMessageBox, QFormLayout, QProgressBar, QGroupBox, QSplitter, QHBoxLayout)
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon, QShortcut, QKeySequence
-from login import UserAuth
-from login import generate_file_hash, process_file, process_folder
+from config import UserAuth
+from config import generate_file_hash, process_file, process_folder
 
 class EncryptDecryptApp(QWidget):
     def __init__(self):
@@ -15,13 +15,66 @@ class EncryptDecryptApp(QWidget):
         self.createShortcuts()
         self.disable_file_processing()
     
+    def apply_styles(self):
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #121212; 
+                color: #E0E0E0;
+                font-family: 'Orbitron', sans-serif;
+            }
+            QGroupBox {
+                border: 1px solid #2E9AFE;
+                border-radius: 10px;
+                margin-top: 20px;
+                font-size: 14px;
+                color: #7FDBFF;
+            }
+            QPushButton {
+                background-color: #444444;
+                color: #FFFFFF;
+                border: 1px solid #2E9AFE;
+                border-radius: 5px;
+                padding: 5px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #2E9AFE;
+                color: #000000;
+            }
+            QLineEdit {
+                background-color: #222222;
+                color: #FFFFFF;
+                border: 1px solid #444444;
+                border-radius: 5px;
+                padding: 5px;
+            }
+            QProgressBar {
+                background: #333333;
+                color: #FFFFFF;
+                border: 1px solid #444444;
+                border-radius: 5px;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background-color: #2E9AFE;
+            }
+            QLabel {
+                color: #FFFFFF;
+            }
+            QRadioButton {
+                color: #E0E0E0;
+            }
+        """)
+
+
     def createShortcuts(self):
+        
         QShortcut(QKeySequence('Ctrl+O'), self).activated.connect(self.browse_file)
         QShortcut(QKeySequence('Ctrl+Q'), self).activated.connect(self.close)
     
     def initUI(self):
         self.setWindowTitle('Quick Cryptography 1.0')
-        self.setGeometry(200, 200, 600, 400)
+        self.setGeometry(200, 200, 650, 450)
         
         main_layout = QVBoxLayout()
         
@@ -42,9 +95,16 @@ class EncryptDecryptApp(QWidget):
         self.register_button = QPushButton('Registrar', self)
         self.register_button.clicked.connect(self.register)
         
-        auth_layout.addRow(self.email_label, self.email_entry)
-        auth_layout.addRow(self.password_label, self.password_entry)
-        auth_layout.addRow(self.login_button, self.register_button)
+        email_layout = QHBoxLayout()
+        email_layout.addWidget(self.email_entry)
+        email_layout.addWidget(self.login_button)
+        
+        password_layout = QHBoxLayout()
+        password_layout.addWidget(self.password_entry)
+        password_layout.addWidget(self.register_button)
+        
+        auth_layout.addRow(self.email_label, email_layout)
+        auth_layout.addRow(self.password_label, password_layout)
         auth_group.setLayout(auth_layout)
         
         # Grupo de processamento de arquivos
@@ -95,7 +155,12 @@ class EncryptDecryptApp(QWidget):
         main_layout.addWidget(auth_group)
         main_layout.addWidget(file_group)
         
-        self.setLayout(main_layout)
+        container = QWidget()
+        container.setLayout(main_layout)
+        
+        main_layout_final = QVBoxLayout()
+        main_layout_final.addWidget(container)
+        self.setLayout(main_layout_final)
     
     def browse_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, 'Selecionar Arquivo')
