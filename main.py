@@ -1,20 +1,195 @@
 import sys
-from PySide6.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout, QFileDialog,
-                               QLineEdit, QLabel, QRadioButton, QMessageBox, QFormLayout, QProgressBar, QGroupBox, QSplitter, QHBoxLayout)
-from PySide6.QtCore import Qt, QSize
+import os
+import time
+import hashlib
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QPushButton, QVBoxLayout, QFileDialog,
+    QLineEdit, QLabel, QRadioButton, QMessageBox, QFormLayout, QProgressBar,
+    QGroupBox, QHBoxLayout
+)
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QIcon, QShortcut, QKeySequence
-from config import UserAuth
-from config import generate_file_hash, process_file, process_folder
 
+# Importa as funções e classes necessárias do módulo de configuração
+from config import UserAuth, generate_file_hash, CamelliaCryptor
+
+# ------------------------------------------------------------------------------
+# Função auxiliar para formatar segundos no formato HH:MM:SS
+# ------------------------------------------------------------------------------
+def format_eta(seconds):
+    seconds = int(seconds)
+    hrs = seconds // 3600
+    mins = (seconds % 3600) // 60
+    secs = seconds % 60
+    return f"{hrs:02d}:{mins:02d}:{secs:02d}"
+
+# ------------------------------------------------------------------------------
+# Worker thread para processar um único arquivo, com emissão de sinais para
+# atualizar a barra de progresso (incluindo ETA).
+# ------------------------------------------------------------------------------
+class FileProcessorThread(QThread):
+    # Sinal que emite a porcentagem e uma string informativa (ex: ETA)
+    progressChanged = Signal(int, str)
+    finishedProcessing = Signal(bool, str)  # (sucesso, mensagem)
+
+    def __init__(self, file_path: str, password: bytes, encrypt: bool = True, parent=None):
+        super().__init__(parent)
+        self.file_path = file_path
+        self.password = password
+        self.encrypt = encrypt
+
+    def run(self):
+        try:
+            file_size = os.path.getsize(self.file_path)
+            processed = 0
+            start_time = time.time()
+            cryptor = CamelliaCryptor(self.password)
+            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+            if self.encrypt:
+                salt = os.urandom(16)
+                iv = os.urandom(16)
+                key = cryptor._derive_key(salt)
+                camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
+                encryptor = camellia_cipher.encryptor()
+
+                with open(self.file_path, 'rb') as f, open(self.file_path + '.tmp', 'wb') as out_file:
+                    # Escreve salt e IV no início do arquivo cifrado
+                    out_file.write(salt + iv)
+                    while True:
+                        chunk = f.read(8192)
+                        if not chunk:
+                            break
+                        out_file.write(encryptor.update(chunk))
+                        processed += len(chunk)
+                        percent = int((processed / file_size) * 100)
+                        elapsed = time.time() - start_time
+                        if processed == 0 or percent == 0:
+                            formatted_eta = "Calculando..."
+                        else:
+                            total_estimated = elapsed / (processed / file_size)
+                            eta = total_estimated - elapsed
+                            formatted_eta = format_eta(eta)
+                        self.progressChanged.emit(percent, f"{percent}% - ETA: {formatted_eta}")
+                    out_file.write(encryptor.finalize())
+            else:
+                with open(self.file_path, 'rb') as f, open(self.file_path + '.tmp', 'wb') as out_file:
+                    # Lê os 32 primeiros bytes (salt+IV)
+                    salt = f.read(16)
+                    iv = f.read(16)
+                    processed = 32
+                    self.progressChanged.emit(int((processed / file_size) * 100), "Calculando ETA...")
+                    key = cryptor._derive_key(salt)
+                    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+                    camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
+                    decryptor = camellia_cipher.decryptor()
+                    while True:
+                        chunk = f.read(8192)
+                        if not chunk:
+                            break
+                        out_file.write(decryptor.update(chunk))
+                        processed += len(chunk)
+                        percent = int((processed / file_size) * 100)
+                        elapsed = time.time() - start_time
+                        if processed == 0 or percent == 0:
+                            formatted_eta = "Calculando..."
+                        else:
+                            total_estimated = elapsed / (processed / file_size)
+                            eta = total_estimated - elapsed
+                            formatted_eta = format_eta(eta)
+                        self.progressChanged.emit(percent, f"{percent}% - ETA: {formatted_eta}")
+                    out_file.write(decryptor.finalize())
+
+            # Substitui o arquivo original pelo processado
+            os.replace(self.file_path + '.tmp', self.file_path)
+            file_hash = generate_file_hash(self.file_path) or "N/A"
+            self.finishedProcessing.emit(True, file_hash)
+        except Exception as e:
+            self.finishedProcessing.emit(False, str(e))
+
+# ------------------------------------------------------------------------------
+# Worker thread para processar uma pasta inteira, exibindo também a contagem
+# de arquivos e o ETA para a conclusão do processamento.
+# ------------------------------------------------------------------------------
+class FolderProcessorThread(QThread):
+    progressChanged = Signal(int, str)
+    finishedProcessing = Signal(bool, str)
+
+    def __init__(self, folder_path: str, password: bytes, encrypt: bool = True, parent=None):
+        super().__init__(parent)
+        self.folder_path = folder_path
+        self.password = password
+        self.encrypt = encrypt
+
+    def run(self):
+        try:
+            files = []
+            for root, _, fs in os.walk(self.folder_path):
+                for f in fs:
+                    files.append(os.path.join(root, f))
+            total_files = len(files)
+            if total_files == 0:
+                self.finishedProcessing.emit(False, "Pasta vazia.")
+                return
+
+            start_time = time.time()
+            for i, file in enumerate(files):
+                cryptor = CamelliaCryptor(self.password)
+                from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+                if self.encrypt:
+                    salt = os.urandom(16)
+                    iv = os.urandom(16)
+                    key = cryptor._derive_key(salt)
+                    camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
+                    encryptor = camellia_cipher.encryptor()
+                    with open(file, 'rb') as f, open(file + '.tmp', 'wb') as out_file:
+                        out_file.write(salt + iv)
+                        while True:
+                            chunk = f.read(8192)
+                            if not chunk:
+                                break
+                            out_file.write(encryptor.update(chunk))
+                        out_file.write(encryptor.finalize())
+                else:
+                    with open(file, 'rb') as f, open(file + '.tmp', 'wb') as out_file:
+                        salt = f.read(16)
+                        iv = f.read(16)
+                        key = cryptor._derive_key(salt)
+                        camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
+                        decryptor = camellia_cipher.decryptor()
+                        while True:
+                            chunk = f.read(8192)
+                            if not chunk:
+                                break
+                            out_file.write(decryptor.update(chunk))
+                        out_file.write(decryptor.finalize())
+                os.replace(file + '.tmp', file)
+
+                overall_percent = int(((i + 1) / total_files) * 100)
+                elapsed = time.time() - start_time
+                estimated_total = elapsed / ((i + 1) / total_files)
+                eta = estimated_total - elapsed
+                formatted_eta = format_eta(eta)
+                self.progressChanged.emit(overall_percent, f"Arquivo {i + 1}/{total_files} - ETA: {formatted_eta}")
+            self.finishedProcessing.emit(True, "Processamento de pasta concluído!")
+        except Exception as e:
+            self.finishedProcessing.emit(False, str(e))
+
+
+# ------------------------------------------------------------------------------
+# Classe principal da GUI
+# ------------------------------------------------------------------------------
 class EncryptDecryptApp(QWidget):
     def __init__(self):
         super().__init__()
         self.auth = UserAuth()
         self.user_info = None
+        self.worker_thread = None
         self.initUI()
         self.createShortcuts()
         self.disable_file_processing()
-    
+        self.apply_styles()
+
     def apply_styles(self):
         self.setStyleSheet("""
             QWidget {
@@ -66,12 +241,10 @@ class EncryptDecryptApp(QWidget):
             }
         """)
 
-
     def createShortcuts(self):
-        
         QShortcut(QKeySequence('Ctrl+O'), self).activated.connect(self.browse_file)
         QShortcut(QKeySequence('Ctrl+Q'), self).activated.connect(self.close)
-    
+
     def initUI(self):
         self.setWindowTitle('Quick Cryptography 1.0')
         self.setGeometry(200, 200, 650, 450)
@@ -138,6 +311,8 @@ class EncryptDecryptApp(QWidget):
         self.process_button.clicked.connect(self.process)
         
         self.progress_bar = QProgressBar(self)
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
         
         file_layout.addWidget(self.file_label)
         file_layout.addWidget(self.file_path_display)
@@ -171,32 +346,53 @@ class EncryptDecryptApp(QWidget):
         folder_path = QFileDialog.getExistingDirectory(self, 'Selecionar Pasta')
         if folder_path:
             self.folder_path_display.setText(folder_path)
-    
-    def update_progress(self, value):
+
+    # Slot atualizada: recebe o valor (int) e uma mensagem (str)
+    def update_progress(self, value, info):
         self.progress_bar.setValue(value)
+        self.progress_bar.setFormat(info)
     
     def process(self):
         file_path = self.file_path_display.text()
         folder_path = self.folder_path_display.text()
-        password = self.password_entry.text().encode()
+        password = self.password_entry.text()
         
         if not (file_path or folder_path):
             QMessageBox.warning(self, "Atenção", "Por favor, selecione um arquivo ou pasta!")
             return
+
+        self.process_button.setEnabled(False)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("0% - Iniciando...")
         
         if file_path:
-            success = process_file(file_path, password, self.encrypt_radio.isChecked())
-            if success:
-                file_hash = generate_file_hash(file_path)
-                QMessageBox.information(self, "Sucesso", f"Arquivo processado com sucesso!\nHash: {file_hash}")
-            else:
-                QMessageBox.critical(self, "Erro", "Erro ao processar o arquivo.")
-        
-        if folder_path:
-            process_folder(folder_path, password, self.encrypt_radio.isChecked())
-            QMessageBox.information(self, "Sucesso", "Pasta processada com sucesso!")
-        
-        self.update_progress(100)
+            self.worker_thread = FileProcessorThread(file_path, password.encode(), self.encrypt_radio.isChecked())
+            self.worker_thread.progressChanged.connect(self.update_progress)
+            self.worker_thread.finishedProcessing.connect(self.file_processing_finished)
+            self.worker_thread.start()
+        elif folder_path:
+            self.worker_thread = FolderProcessorThread(folder_path, password.encode(), self.encrypt_radio.isChecked())
+            self.worker_thread.progressChanged.connect(self.update_progress)
+            self.worker_thread.finishedProcessing.connect(self.folder_processing_finished)
+            self.worker_thread.start()
+    
+    def file_processing_finished(self, success: bool, message: str):
+        self.process_button.setEnabled(True)
+        if success:
+            QMessageBox.information(self, "Sucesso", f"Arquivo processado com sucesso!\n Chave Hash para resgatar o arquivo - salve essa chave em um lugar seguro: {message}")
+        else:
+            QMessageBox.critical(self, "Erro", f"Erro ao processar o arquivo: {message}")
+        self.progress_bar.setValue(100)
+        self.progress_bar.setFormat("100% - Concluído")
+    
+    def folder_processing_finished(self, success: bool, message: str):
+        self.process_button.setEnabled(True)
+        if success:
+            QMessageBox.information(self, "Sucesso", message)
+        else:
+            QMessageBox.critical(self, "Erro", message)
+        self.progress_bar.setValue(100)
+        self.progress_bar.setFormat("100% - Concluído")
     
     def login(self):
         email = self.email_entry.text()
