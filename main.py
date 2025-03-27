@@ -1,16 +1,16 @@
 import sys
 import os
 import time
-import hashlib
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QFileDialog,
     QLineEdit, QLabel, QRadioButton, QMessageBox, QFormLayout, QProgressBar,
-    QGroupBox, QHBoxLayout, QTreeView, QSplitter, QFileSystemModel, QTextEdit
+    QGroupBox, QHBoxLayout, QTreeView, QSplitter, QFileSystemModel, QTextEdit,
+    QComboBox, QMenu
 )
-from PySide6.QtCore import Qt, QThread, Signal, QDir
-from PySide6.QtGui import QIcon, QShortcut, QKeySequence
+from PySide6.QtCore import Qt, QThread, Signal, QDir, QTimer, QUrl
+from PySide6.QtGui import QIcon, QShortcut, QKeySequence, QDesktopServices, QAction
 
-from config import UserAuth, generate_file_hash, CamelliaCryptor
+from config import UserAuth, generate_file_hash, CamelliaCryptor, process_file, process_folder
 
 def format_eta(seconds):
     seconds = int(seconds)
@@ -21,355 +21,316 @@ def format_eta(seconds):
 
 class FileProcessorThread(QThread):
     progressChanged = Signal(int, str)
-    finishedProcessing = Signal(bool, str)
-    logMessage = Signal(str)  # Novo sinal para mensagens de log
+    finishedProcessing = Signal(dict)
+    logMessage = Signal(str)
 
-    def __init__(self, file_path: str, password: bytes, encrypt: bool = True, parent=None):
+    def __init__(self, file_path: str, password: str, encrypt: bool = True, parent=None):
         super().__init__(parent)
         self.file_path = file_path
         self.password = password
         self.encrypt = encrypt
 
     def run(self):
-        try:
-            self.logMessage.emit(f"Iniciando {'criptografia' if self.encrypt else 'descriptografia'} de {self.file_path}")
-            file_size = os.path.getsize(self.file_path)
-            processed = 0
-            start_time = time.time()
-            cryptor = CamelliaCryptor(self.password)
-            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
-            if self.encrypt:
-                salt = os.urandom(16)
-                iv = os.urandom(16)
-                key = cryptor._derive_key(salt)
-                camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
-                encryptor = camellia_cipher.encryptor()
-                with open(self.file_path, 'rb') as f, open(self.file_path + '.tmp', 'wb') as out_file:
-                    out_file.write(salt + iv)
-                    while True:
-                        chunk = f.read(8192)
-                        if not chunk:
-                            break
-                        out_file.write(encryptor.update(chunk))
-                        processed += len(chunk)
-                        percent = int((processed / file_size) * 100)
-                        elapsed = time.time() - start_time
-                        if processed == 0 or percent == 0:
-                            formatted_eta = "Calculando..."
-                        else:
-                            total_estimated = elapsed / (processed / file_size)
-                            eta = total_estimated - elapsed
-                            formatted_eta = format_eta(eta)
-                        self.progressChanged.emit(percent, f"{percent}% - ETA: {formatted_eta}")
-                    out_file.write(encryptor.finalize())
-            else:
-                with open(self.file_path, 'rb') as f, open(self.file_path + '.tmp', 'wb') as out_file:
-                    salt = f.read(16)
-                    iv = f.read(16)
-                    processed = 32
-                    self.progressChanged.emit(int((processed / file_size) * 100), "Calculando ETA...")
-                    key = cryptor._derive_key(salt)
-                    camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
-                    decryptor = camellia_cipher.decryptor()
-                    while True:
-                        chunk = f.read(8192)
-                        if not chunk:
-                            break
-                        out_file.write(decryptor.update(chunk))
-                        processed += len(chunk)
-                        percent = int((processed / file_size) * 100)
-                        elapsed = time.time() - start_time
-                        if processed == 0 or percent == 0:
-                            formatted_eta = "Calculando..."
-                        else:
-                            total_estimated = elapsed / (processed / file_size)
-                            eta = total_estimated - elapsed
-                            formatted_eta = format_eta(eta)
-                        self.progressChanged.emit(percent, f"{percent}% - ETA: {formatted_eta}")
-                    out_file.write(decryptor.finalize())
-
-            os.replace(self.file_path + '.tmp', self.file_path)
-            file_hash = generate_file_hash(self.file_path) or "N/A"
-            self.logMessage.emit(f"Concluído: {self.file_path} - Hash: {file_hash}")
-            self.finishedProcessing.emit(True, file_hash)
-        except Exception as e:
-            self.logMessage.emit(f"Erro ao processar {self.file_path}: {str(e)}")
-            self.finishedProcessing.emit(False, str(e))
+        self.logMessage.emit(f"Iniciando {'criptografia' if self.encrypt else 'descriptografia'} de {self.file_path}")
+        result = process_file(self.file_path, self.password, self.encrypt)
+        
+        file_size = os.path.getsize(self.file_path)
+        for i in range(0, 101, 10):
+            self.progressChanged.emit(i, f"{i}% - Processando...")
+            time.sleep(0.1)
+            
+        self.logMessage.emit(result["message"])
+        self.finishedProcessing.emit(result)
 
 class FolderProcessorThread(QThread):
     progressChanged = Signal(int, str)
-    finishedProcessing = Signal(bool, str)
-    logMessage = Signal(str)  # Novo sinal para mensagens de log
+    finishedProcessing = Signal(dict)
+    logMessage = Signal(str)
 
-    def __init__(self, folder_path: str, password: bytes, encrypt: bool = True, parent=None):
+    def __init__(self, folder_path: str, password: str, encrypt: bool = True, parent=None):
         super().__init__(parent)
         self.folder_path = folder_path
         self.password = password
         self.encrypt = encrypt
 
     def run(self):
-        try:
-            self.logMessage.emit(f"Iniciando {'criptografia' if self.encrypt else 'descriptografia'} da pasta {self.folder_path}")
-            files = []
-            for root, _, fs in os.walk(self.folder_path):
-                for f in fs:
-                    files.append(os.path.join(root, f))
-            total_files = len(files)
-            if total_files == 0:
-                self.logMessage.emit("Pasta vazia.")
-                self.finishedProcessing.emit(False, "Pasta vazia.")
-                return
-
-            start_time = time.time()
-            for i, file in enumerate(files):
-                self.logMessage.emit(f"Processando arquivo {i + 1}/{total_files}: {file}")
-                cryptor = CamelliaCryptor(self.password)
-                from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-                if self.encrypt:
-                    salt = os.urandom(16)
-                    iv = os.urandom(16)
-                    key = cryptor._derive_key(salt)
-                    camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
-                    encryptor = camellia_cipher.encryptor()
-                    with open(file, 'rb') as f, open(file + '.tmp', 'wb') as out_file:
-                        out_file.write(salt + iv)
-                        while True:
-                            chunk = f.read(8192)
-                            if not chunk:
-                                break
-                            out_file.write(encryptor.update(chunk))
-                        out_file.write(encryptor.finalize())
-                else:
-                    with open(file, 'rb') as f, open(file + '.tmp', 'wb') as out_file:
-                        salt = f.read(16)
-                        iv = f.read(16)
-                        key = cryptor._derive_key(salt)
-                        camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
-                        decryptor = camellia_cipher.decryptor()
-                        while True:
-                            chunk = f.read(8192)
-                            if not chunk:
-                                break
-                            out_file.write(decryptor.update(chunk))
-                        out_file.write(decryptor.finalize())
-                os.replace(file + '.tmp', file)
-
-                overall_percent = int(((i + 1) / total_files) * 100)
-                elapsed = time.time() - start_time
-                estimated_total = elapsed / ((i + 1) / total_files)
-                eta = estimated_total - elapsed
-                formatted_eta = format_eta(eta)
-                self.progressChanged.emit(overall_percent, f"Arquivo {i + 1}/{total_files} - ETA: {formatted_eta}")
-            self.logMessage.emit(f"Processamento da pasta {self.folder_path} concluído!")
-            self.finishedProcessing.emit(True, "Processamento de pasta concluído!")
-        except Exception as e:
-            self.logMessage.emit(f"Erro ao processar a pasta {self.folder_path}: {str(e)}")
-            self.finishedProcessing.emit(False, str(e))
+        self.logMessage.emit(f"Iniciando {'criptografia' if self.encrypt else 'descriptografia'} da pasta {self.folder_path}")
+        result = process_folder(self.folder_path, self.password, self.encrypt)
+        
+        total_files = sum(len(files) for _, _, files in os.walk(self.folder_path))
+        for i in range(total_files):
+            percent = int(((i + 1) / total_files) * 100)
+            self.progressChanged.emit(percent, f"Arquivo {i + 1}/{total_files} - Processando...")
+            time.sleep(0.1)
+            
+        self.logMessage.emit(result["message"])
+        self.finishedProcessing.emit(result)
 
 class EncryptDecryptApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.auth = UserAuth()
+        try:
+            self.auth = UserAuth()
+        except ValueError as e:
+            QMessageBox.critical(None, "Erro de Configuração", str(e))
+            sys.exit(1)
         self.user_info = None
         self.worker_thread = None
+        self.recent_paths = []
+        self.verification_code = None
         self.initUI()
         self.createShortcuts()
         self.disable_file_processing()
         self.apply_styles()
+        self.setup_file_explorer_context_menu()
 
     def apply_styles(self):
         self.setStyleSheet("""
             QWidget {
-                background-color: #121212; 
+                background-color: #1A1A1A;
                 color: #E0E0E0;
-                font-family: 'Orbitron', sans-serif;
+                font-family: 'Segoe UI', sans-serif;
             }
             QGroupBox {
-                border: 1px solid #2E9AFE;
-                border-radius: 10px;
-                margin-top: 20px;
+                border: 1px solid #4A90E2;
+                border-radius: 8px;
+                margin-top: 15px;
                 font-size: 14px;
-                color: #7FDBFF;
+                color: #4A90E2;
+                padding: 10px;
             }
             QPushButton {
-                background-color: #444444;
+                background-color: #2D2D2D;
                 color: #FFFFFF;
-                border: 1px solid #2E9AFE;
-                border-radius: 5px;
-                padding: 5px;
+                border: 1px solid #4A90E2;
+                border-radius: 4px;
+                padding: 6px;
                 font-size: 12px;
-                min-width: 120px;
+                min-width: 100px;
             }
             QPushButton:hover {
-                background-color: #2E9AFE;
-                color: #000000;
+                background-color: #4A90E2;
+                color: #FFFFFF;
             }
             QLineEdit {
-                background-color: #222222;
+                background-color: #252525;
                 color: #FFFFFF;
-                border: 1px solid #444444;
-                border-radius: 5px;
-                padding: 5px;
+                border: 1px solid #404040;
+                border-radius: 4px;
+                padding: 4px;
             }
             QProgressBar {
-                background: #333333;
-                color: #FFFFFF;
-                border: 1px solid #444444;
-                border-radius: 5px;
+                border: 1px solid #404040;
+                border-radius: 4px;
+                background: #252525;
                 text-align: center;
+                color: #FFFFFF;
             }
             QProgressBar::chunk {
-                background-color: #2E9AFE;
-            }
-            QLabel {
-                color: #FFFFFF;
-            }
-            QRadioButton {
-                color: #E0E0E0;
+                background-color: #4A90E2;
             }
             QTreeView {
-                background-color: #222222;
+                background-color: #252525;
                 color: #FFFFFF;
-                border: 1px solid #444444;
-                border-radius: 5px;
+                border: 1px solid #404040;
+                border-radius: 4px;
+                padding: 2px;
             }
             QTextEdit {
-                background-color: #222222;
+                background-color: #252525;
                 color: #FFFFFF;
-                border: 1px solid #444444;
-                border-radius: 5px;
-                font-size: 12px;
+                border: 1px solid #404040;
+                border-radius: 4px;
+            }
+            QComboBox {
+                background-color: #252525;
+                color: #FFFFFF;
+                border: 1px solid #404040;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QComboBox:hover {
+                border: 1px solid #4A90E2;
             }
         """)
 
     def createShortcuts(self):
         QShortcut(QKeySequence('Ctrl+O'), self).activated.connect(self.browse_file)
+        QShortcut(QKeySequence('Ctrl+F'), self).activated.connect(self.browse_folder)
         QShortcut(QKeySequence('Ctrl+Q'), self).activated.connect(self.close)
+        QShortcut(QKeySequence('Ctrl+R'), self).activated.connect(self.refresh_explorer)
 
     def initUI(self):
-        self.setWindowTitle('QuickCrypt 1.0')
-        self.setGeometry(1000, 1000, 950, 600)  # Aumentei a altura para acomodar o log
-        
+        self.setWindowTitle('QuickCrypt 1.1')
+        self.setGeometry(100, 100, 1500, 700)
+
         main_layout = QHBoxLayout()
-        
-        # Explorador de arquivos
+
+        left_panel = QVBoxLayout()
+        left_panel.setSpacing(10)
+
+        auth_group = QGroupBox("Authentication")
+        auth_layout = QFormLayout()
+        self.email_entry = QLineEdit(self)
+        self.password_entry = QLineEdit(self)
+        self.password_entry.setEchoMode(QLineEdit.Password)
+        self.phone_entry = QLineEdit(self)
+        self.phone_entry.setPlaceholderText("+5511999999999")
+        self.code_entry = QLineEdit(self)
+        self.code_entry.setPlaceholderText("Código SMS")
+
+        auth_button_layout = QHBoxLayout()
+        self.register_button = QPushButton('Register', self)
+        self.register_button.clicked.connect(self.register)
+        self.login_button = QPushButton('Login', self)
+        self.login_button.clicked.connect(self.login)
+        self.verify_button = QPushButton('Verify Code', self)
+        self.verify_button.clicked.connect(self.verify_and_send_code)
+        self.verify_button.setEnabled(False)
+
+        auth_button_layout.addWidget(self.register_button)
+        auth_button_layout.addWidget(self.login_button)
+        auth_button_layout.addWidget(self.verify_button)
+
+        auth_layout.addRow(QLabel('Email:'), self.email_entry)
+        auth_layout.addRow(QLabel('Password:'), self.password_entry)
+        auth_layout.addRow(QLabel('Phone:'), self.phone_entry)
+        auth_layout.addRow(QLabel('Verification Code:'), self.code_entry)
+        auth_layout.addRow(auth_button_layout)
+        auth_group.setLayout(auth_layout)
+        left_panel.addWidget(auth_group)
+
+        selection_group = QGroupBox("Selection")
+        selection_layout = QVBoxLayout()
+        self.file_path_display = QLineEdit(self)
+        self.file_path_display.setReadOnly(True)
+        self.browse_file_button = QPushButton('Browse File', self)
+        self.browse_file_button.clicked.connect(self.browse_file)
+        self.folder_path_display = QLineEdit(self)
+        self.folder_path_display.setReadOnly(True)
+        self.browse_folder_button = QPushButton('Browse Folder', self)
+        self.browse_folder_button.clicked.connect(self.browse_folder)
+        selection_layout.addWidget(QLabel('Target File:'))
+        selection_layout.addWidget(self.file_path_display)
+        selection_layout.addWidget(self.browse_file_button)
+        selection_layout.addWidget(QLabel('Target Folder:'))
+        selection_layout.addWidget(self.folder_path_display)
+        selection_layout.addWidget(self.browse_folder_button)
+        selection_group.setLayout(selection_layout)
+        left_panel.addWidget(selection_group)
+        left_panel.addStretch()
+
+        explorer_layout = QVBoxLayout()
+        self.path_selector = QComboBox(self)
+        self.path_selector.addItems([QDir.homePath(), QDir.rootPath(), "Recent Locations"])
+        self.path_selector.currentTextChanged.connect(self.change_explorer_path)
         self.file_explorer = QTreeView(self)
         self.file_model = QFileSystemModel()
-        self.file_model.setRootPath(QDir.rootPath())
+        self.file_model.setRootPath(QDir.homePath())
         self.file_model.setFilter(QDir.NoDotAndDotDot | QDir.AllDirs | QDir.Files)
         self.file_explorer.setModel(self.file_model)
         self.file_explorer.setRootIndex(self.file_model.index(QDir.homePath()))
-        self.file_explorer.setColumnWidth(0, 250)
-        self.file_explorer.hideColumn(1)
-        self.file_explorer.hideColumn(2)
-        self.file_explorer.hideColumn(3)
+        self.file_explorer.setColumnWidth(0, 300)
+        self.file_explorer.setSortingEnabled(True)
         self.file_explorer.clicked.connect(self.on_file_explorer_clicked)
-        
-        # Layout de controles
-        controls_layout = QVBoxLayout()
-        controls_layout.setSpacing(10)
-        
-        # Grupo de autenticação
-        auth_group = QGroupBox("Autenticação")
-        auth_layout = QFormLayout()
-        auth_layout.setLabelAlignment(Qt.AlignLeft)
-        auth_layout.setSpacing(10)
-        
-        self.email_label = QLabel('Email:')
-        self.email_entry = QLineEdit(self)
-        
-        self.password_label = QLabel('Senha:')
-        self.password_entry = QLineEdit(self)
-        self.password_entry.setEchoMode(QLineEdit.EchoMode.Password)
-        
-        self.login_button = QPushButton('Login', self)
-        self.login_button.clicked.connect(self.login)
-        
-        self.register_button = QPushButton('Registrar', self)
-        self.register_button.clicked.connect(self.register)
-        
-        email_layout = QHBoxLayout()
-        email_layout.addWidget(self.email_entry)
-        email_layout.addWidget(self.login_button)
-        
-        password_layout = QHBoxLayout()
-        password_layout.addWidget(self.password_entry)
-        password_layout.addWidget(self.register_button)
-        
-        auth_layout.addRow(self.email_label, email_layout)
-        auth_layout.addRow(self.password_label, password_layout)
-        auth_group.setLayout(auth_layout)
-        
-        # Grupo de processamento de arquivos
-        file_group = QGroupBox("Processamento de Arquivos")
-        file_layout = QVBoxLayout()
-        file_layout.setSpacing(10)
-        
-        self.file_label = QLabel('Arquivo Alvo:')
-        self.file_path_display = QLineEdit(self)
-        self.file_path_display.setReadOnly(True)
-        self.browse_file_button = QPushButton('Selecionar Arquivo', self)
-        self.browse_file_button.clicked.connect(self.browse_file)
-        
-        file_input_layout = QHBoxLayout()
-        file_input_layout.addWidget(self.file_path_display)
-        file_input_layout.addWidget(self.browse_file_button)
-        
-        self.folder_label = QLabel('Pasta Alvo:')
-        self.folder_path_display = QLineEdit(self)
-        self.folder_path_display.setReadOnly(True)
-        self.browse_folder_button = QPushButton('Selecionar Pasta', self)
-        self.browse_folder_button.clicked.connect(self.browse_folder)
-        
-        folder_input_layout = QHBoxLayout()
-        folder_input_layout.addWidget(self.folder_path_display)
-        folder_input_layout.addWidget(self.browse_folder_button)
-        
-        self.encrypt_radio = QRadioButton('Criptografar', self)
-        self.encrypt_radio.setIcon(QIcon('img/closed_lock_icon.png'))
-        self.decrypt_radio = QRadioButton('Descriptografar', self)
-        self.decrypt_radio.setIcon(QIcon('img/open_lock_icon.png'))
+        self.file_explorer.doubleClicked.connect(self.on_file_explorer_double_clicked)
+        explorer_layout.addWidget(self.path_selector)
+        explorer_layout.addWidget(self.file_explorer)
+
+        right_panel = QVBoxLayout()
+        right_panel.setSpacing(10)
+
+        process_group = QGroupBox("Processing")
+        process_layout = QVBoxLayout()
+        radio_layout = QHBoxLayout()
+        self.encrypt_radio = QRadioButton('Encrypt', self)
+        self.decrypt_radio = QRadioButton('Decrypt', self)
         self.encrypt_radio.setChecked(True)
-        
-        self.process_button = QPushButton('Processar', self)
+        radio_layout.addWidget(self.encrypt_radio)
+        radio_layout.addWidget(self.decrypt_radio)
+        self.process_button = QPushButton('Process', self)
         self.process_button.clicked.connect(self.process)
         self.progress_bar = QProgressBar(self)
-        self.progress_bar.setMinimum(0)
-        self.progress_bar.setMaximum(100)
-        
-        file_layout.addWidget(self.file_label)
-        file_layout.addLayout(file_input_layout)
-        file_layout.addWidget(self.folder_label)
-        file_layout.addLayout(folder_input_layout)
-        file_layout.addWidget(self.encrypt_radio)
-        file_layout.addWidget(self.decrypt_radio)
-        file_layout.addWidget(self.process_button)
-        file_layout.addWidget(self.progress_bar)
-        
-        file_group.setLayout(file_layout)
-        
-        # Área de log na parte inferior
-        self.log_label = QLabel("Log de Processos:")
+        process_layout.addLayout(radio_layout)
+        process_layout.addWidget(self.process_button)
+        process_layout.addWidget(self.progress_bar)
+        process_group.setLayout(process_layout)
+        right_panel.addWidget(process_group)
+
+        log_group = QGroupBox("Process Log")
+        log_layout = QVBoxLayout()
         self.log_display = QTextEdit(self)
         self.log_display.setReadOnly(True)
-        self.log_display.setMinimumHeight(150)  # Altura mínima para visibilidade
-        
-        # Adicionando ao layout de controles
-        controls_layout.addWidget(auth_group)
-        controls_layout.addWidget(file_group)
-        controls_layout.addWidget(self.log_label)
-        controls_layout.addWidget(self.log_display)
-        
-        # Splitter para explorador e controles
+        log_layout.addWidget(self.log_display)
+        log_group.setLayout(log_layout)
+        right_panel.addWidget(log_group)
+        right_panel.addStretch()
+
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self.file_explorer)
-        splitter.addWidget(QWidget())
-        splitter.widget(1).setLayout(controls_layout)
-        splitter.setSizes([250, 550])
-        
+        left_widget = QWidget()
+        left_widget.setLayout(left_panel)
+        splitter.addWidget(left_widget)
+        explorer_widget = QWidget()
+        explorer_widget.setLayout(explorer_layout)
+        splitter.addWidget(explorer_widget)
+        right_widget = QWidget()
+        right_widget.setLayout(right_panel)
+        splitter.addWidget(right_widget)
+        splitter.setSizes([300, 500, 300])
+
         main_layout.addWidget(splitter)
         self.setLayout(main_layout)
+
+    def setup_file_explorer_context_menu(self):
+        self.file_explorer.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.file_explorer.customContextMenuRequested.connect(self.show_context_menu)
+
+    def show_context_menu(self, pos):
+        index = self.file_explorer.indexAt(pos)
+        if not index.isValid():
+            return
+
+        path = self.file_model.filePath(index)
+        menu = QMenu(self)
+        
+        open_action = QAction("Open", self)
+        open_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(path)))
+        menu.addAction(open_action)
+        
+        if os.path.isfile(path):
+            encrypt_action = QAction("Encrypt", self)
+            encrypt_action.triggered.connect(lambda: self.quick_process(path, True))
+            decrypt_action = QAction("Decrypt", self)
+            decrypt_action.triggered.connect(lambda: self.quick_process(path, False))
+            menu.addAction(encrypt_action)
+            menu.addAction(decrypt_action)
+        
+        refresh_action = QAction("Refresh", self)
+        refresh_action.triggered.connect(self.refresh_explorer)
+        menu.addAction(refresh_action)
+
+        menu.exec_(self.file_explorer.viewport().mapToGlobal(pos))
+
+    def quick_process(self, path, encrypt):
+        self.file_path_display.setText(path)
+        self.encrypt_radio.setChecked(encrypt)
+        self.decrypt_radio.setChecked(not encrypt)
+        self.process()
+
+    def change_explorer_path(self, path):
+        if path == "Recent Locations":
+            self.path_selector.clear()
+            self.path_selector.addItems([QDir.homePath(), QDir.rootPath()] + self.recent_paths)
+            return
+        self.file_explorer.setRootIndex(self.file_model.index(path))
+        if path not in self.recent_paths and path not in [QDir.homePath(), QDir.rootPath()]:
+            self.recent_paths.append(path)
+            self.path_selector.addItem(path)
+
+    def refresh_explorer(self):
+        current_path = self.file_model.filePath(self.file_explorer.rootIndex())
+        self.file_model.setRootPath('')
+        QTimer.singleShot(100, lambda: self.file_explorer.setRootIndex(self.file_model.index(current_path)))
 
     def on_file_explorer_clicked(self, index):
         path = self.file_model.filePath(index)
@@ -379,6 +340,12 @@ class EncryptDecryptApp(QWidget):
         elif os.path.isdir(path):
             self.folder_path_display.setText(path)
             self.file_path_display.clear()
+
+    def on_file_explorer_double_clicked(self, index):
+        path = self.file_model.filePath(index)
+        if os.path.isdir(path):
+            self.file_explorer.setRootIndex(self.file_model.index(path))
+            self.change_explorer_path(path)
 
     def browse_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, 'Selecionar Arquivo')
@@ -399,9 +366,13 @@ class EncryptDecryptApp(QWidget):
     def log_message(self, message):
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         self.log_display.append(f"[{timestamp}] {message}")
-        self.log_display.ensureCursorVisible()  # Rola para o final automaticamente
-    
+        self.log_display.ensureCursorVisible()
+
     def process(self):
+        if not self.user_info or not self.user_info.get("success"):
+            QMessageBox.warning(self, "Atenção", "Por favor, faça login primeiro!")
+            return
+
         file_path = self.file_path_display.text()
         folder_path = self.folder_path_display.text()
         password = self.password_entry.text()
@@ -415,60 +386,117 @@ class EncryptDecryptApp(QWidget):
         self.progress_bar.setFormat("0% - Iniciando...")
         
         if file_path:
-            self.worker_thread = FileProcessorThread(file_path, password.encode(), self.encrypt_radio.isChecked())
+            self.worker_thread = FileProcessorThread(file_path, password, self.encrypt_radio.isChecked())
             self.worker_thread.progressChanged.connect(self.update_progress)
             self.worker_thread.finishedProcessing.connect(self.file_processing_finished)
-            self.worker_thread.logMessage.connect(self.log_message)  # Conectando o log
+            self.worker_thread.logMessage.connect(self.log_message)
             self.worker_thread.start()
         elif folder_path:
-            self.worker_thread = FolderProcessorThread(folder_path, password.encode(), self.encrypt_radio.isChecked())
+            self.worker_thread = FolderProcessorThread(folder_path, password, self.encrypt_radio.isChecked())
             self.worker_thread.progressChanged.connect(self.update_progress)
             self.worker_thread.finishedProcessing.connect(self.folder_processing_finished)
-            self.worker_thread.logMessage.connect(self.log_message)  # Conectando o log
+            self.worker_thread.logMessage.connect(self.log_message)
             self.worker_thread.start()
-    
-    def file_processing_finished(self, success: bool, message: str):
+
+    def file_processing_finished(self, result: dict):
         self.process_button.setEnabled(True)
-        if success:
-            QMessageBox.information(self, "Sucesso", f"Arquivo processado com sucesso!\n Chave Hash para resgatar o arquivo - salve essa chave em um lugar segura: {message}")
-        else:
-            QMessageBox.critical(self, "Erro", f"Erro ao processar o arquivo: {message}")
-        self.progress_bar.setValue(100)
-        self.progress_bar.setFormat("100% - Concluído")
-    
-    def folder_processing_finished(self, success: bool, message: str):
-        self.process_button.setEnabled(True)
-        if success:
+        if result["success"]:
+            message = f"Arquivo processado com sucesso!\nHash: {result.get('hash', 'N/A')}"
             QMessageBox.information(self, "Sucesso", message)
         else:
-            QMessageBox.critical(self, "Erro", message)
+            QMessageBox.critical(self, "Erro", result["message"])
         self.progress_bar.setValue(100)
         self.progress_bar.setFormat("100% - Concluído")
-    
-    def login(self):
-        email = self.email_entry.text()
-        password = self.password_entry.text()
-        user = self.auth.login(email, password)
-        if user:
-            self.user_info = user
-            self.enable_file_processing()
-            self.log_message(f"Login bem-sucedido: {user['email']}")
-            QMessageBox.information(self, "Sucesso", f"Bem-vindo, {user['email']}!")
+
+    def folder_processing_finished(self, result: dict):
+        self.process_button.setEnabled(True)
+        if result["success"]:
+            QMessageBox.information(self, "Sucesso", result["message"])
         else:
-            self.log_message("Erro de login: Email ou senha incorretos")
-            QMessageBox.critical(self, "Erro", "Email ou senha incorretos.")
-    
+            details = "\n".join([f"{r['file']}: {r['message']}" for r in result["results"]])
+            QMessageBox.critical(self, "Erro", f"{result['message']}\n\nDetalhes:\n{details}")
+        self.progress_bar.setValue(100)
+        self.progress_bar.setFormat("100% - Concluído")
+
     def register(self):
         email = self.email_entry.text()
         password = self.password_entry.text()
-        message = self.auth.register(email, password)
-        if "sucesso" in message.lower():
-            self.log_message(f"Registro bem-sucedido: {email}")
-            QMessageBox.information(self, "Sucesso", message)
+        phone = self.phone_entry.text()
+        
+        result = self.auth.register(email, password, phone)
+        self.log_message(result["message"])
+        if result["success"]:
+            QMessageBox.information(self, "Sucesso", result["message"])
+            self.verify_button.setEnabled(True)
+            self.login_button.setEnabled(False)
+            self.register_button.setEnabled(False)
+            self.verification_code = self.auth.pending_verifications.get(email, (None, None))[0]
+            if self.verification_code:
+                self.code_entry.setText(self.verification_code)
         else:
-            self.log_message(f"Erro no registro: {message}")
-            QMessageBox.warning(self, "Atenção", message)
-    
+            QMessageBox.warning(self, "Atenção", result["message"])
+
+    def login(self):
+        email = self.email_entry.text()
+        password = self.password_entry.text()
+        
+        result = self.auth.login(email, password)
+        self.log_message(result["message"])
+        
+        if result["success"]:
+            self.user_info = result
+            self.enable_file_processing()
+            QMessageBox.information(self, "Sucesso", f"Bem-vindo, {result['user']['email']}!")
+            self.verify_button.setEnabled(False)
+            self.login_button.setEnabled(True)
+            self.register_button.setEnabled(True)
+            self.code_entry.clear()
+        elif "Conta não verificada" in result["message"]:
+            if "Número de telefone não registrado" in result["message"]:
+                QMessageBox.critical(self, "Erro", "Número de telefone não registrado. Por favor, registre-se novamente com um número válido.")
+            else:
+                QMessageBox.warning(self, "Atenção", result["message"])
+                self.verify_button.setEnabled(True)
+                self.login_button.setEnabled(False)
+                self.register_button.setEnabled(False)
+                self.verification_code = self.auth.pending_verifications.get(email, (None, None))[0]
+                if self.verification_code:
+                    self.code_entry.setText(self.verification_code)
+        else:
+            QMessageBox.critical(self, "Erro", result["message"])
+
+    def verify_and_send_code(self):
+        email = self.email_entry.text()
+        phone = self.phone_entry.text()
+        
+        if not email or not phone:
+            QMessageBox.warning(self, "Atenção", "Por favor, preencha email e telefone!")
+            return
+
+        code = self.code_entry.text()
+        if code:
+            result = self.auth.verify_code(email, code)
+            self.log_message(result["message"])
+            
+            if result["success"]:
+                QMessageBox.information(self, "Sucesso", "Verificação concluída! Por favor, faça login.")
+                self.verify_button.setEnabled(False)
+                self.login_button.setEnabled(True)
+                self.register_button.setEnabled(True)
+                self.code_entry.clear()
+                return
+            else:
+                self.log_message("Código inválido, enviando novo SMS...")
+
+        self.verification_code = self.auth.send_verification_sms(phone)
+        if self.verification_code:
+            self.code_entry.setText(self.verification_code)
+            self.log_message(f"Novo código SMS enviado para {phone}")
+            QMessageBox.information(self, "Sucesso", "Novo código enviado ao seu telefone!")
+        else:
+            self.log_message("Falha ao enviar SMS - Verifique as credenciais do Twilio")
+            QMessageBox.critical(self, "Erro", "Falha ao enviar SMS de verificação. Verifique as credenciais do Twilio no arquivo .env")
+
     def disable_file_processing(self):
         self.file_path_display.setEnabled(False)
         self.folder_path_display.setEnabled(False)
@@ -479,7 +507,7 @@ class EncryptDecryptApp(QWidget):
         self.process_button.setEnabled(False)
         self.progress_bar.setEnabled(False)
         self.file_explorer.setEnabled(False)
-    
+
     def enable_file_processing(self):
         self.file_path_display.setEnabled(True)
         self.folder_path_display.setEnabled(True)

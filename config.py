@@ -5,18 +5,29 @@ from dotenv import load_dotenv
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
-from typing import Optional, Tuple
-from tqdm import tqdm  # Biblioteca para barra de progresso
+from typing import Optional, Tuple, Dict
+from tqdm import tqdm
+from twilio.rest import Client
+from twilio.base.exceptions import TwilioRestException
+import random
+import time
 
 # Carrega variáveis de ambiente
 load_dotenv()
 
-# Configurações do MongoDB a partir das variáveis de ambiente
+# Configurações do MongoDB
 MONGO_URI = os.getenv('MONGO_URI')
 MONGO_DB = os.getenv('MONGO_DB')
 MONGO_COLLECTION = os.getenv('MONGO_COLLECTION')
 USER_DATA_FILE = os.getenv('USER_DATA_FILE')
 
+# Configurações do Twilio
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
+
+# Tempo de expiração do código de verificação
+VERIFICATION_CODE_EXPIRY = 300
 
 def generate_file_hash(file_path: str) -> Optional[str]:
     """Gera o hash SHA256 de um arquivo processando-o em chunks."""
@@ -30,15 +41,13 @@ def generate_file_hash(file_path: str) -> Optional[str]:
         return None
     return hasher.hexdigest()
 
-
 class CamelliaCryptor:
     """Classe para encriptação e desencriptação usando Camellia"""
-
+    
     def __init__(self, password: bytes):
         self.password = password
 
     def _derive_key(self, salt: bytes) -> bytes:
-        """Gera a chave derivada da senha"""
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
@@ -48,75 +57,146 @@ class CamelliaCryptor:
         return kdf.derive(self.password)
 
     def encrypt(self, msg: bytes) -> Tuple[bytes, bytes, bytes]:
-        """Encripta uma mensagem usando Camellia"""
         salt = os.urandom(16)
         iv = os.urandom(16)
         key = self._derive_key(salt)
-
         camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
         encryptor = camellia_cipher.encryptor()
         ciphertext = encryptor.update(msg) + encryptor.finalize()
-
         return salt, iv, ciphertext
 
     def decrypt(self, salt: bytes, iv: bytes, ciphertext: bytes) -> bytes:
-        """Desencripta uma mensagem usando Camellia"""
         key = self._derive_key(salt)
-
         camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
         decryptor = camellia_cipher.decryptor()
-
         return decryptor.update(ciphertext) + decryptor.finalize()
 
-
 class UserAuth:
+    """Classe para gerenciamento de autenticação de usuários com SMS"""
+    
     def __init__(self):
-        # Conecta ao MongoDB
         self.db_client = MongoClient(MONGO_URI)
         self.db = self.db_client[MONGO_DB]
         self.collection = self.db[MONGO_COLLECTION]
+        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_PHONE_NUMBER:
+            raise ValueError("Credenciais do Twilio não configuradas corretamente. Verifique o arquivo .env")
+        self.twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        self.pending_verifications: Dict[str, Tuple[str, float]] = {}
 
     def hash_password(self, password: str) -> str:
-        # Gera o hash da senha
         return hashlib.sha256(password.encode()).hexdigest()
 
-    def register(self, email: str, password: str) -> str:
-        # Verifica se o email já está registrado
-        if self.collection.find_one({"email": email}):
-            return "Este email já está registrado!"
-        # Insere novo usuário com senha hasheada
-        hashed_password = self.hash_password(password)
-        self.collection.insert_one({"email": email, "password": hashed_password})
-        # Salva o registro no arquivo
-        with open(USER_DATA_FILE, 'a') as file:
-            file.write(f"{email},{hashed_password}\n")
-        return "Registro realizado com sucesso! Agora você pode fazer o login."
+    def register(self, email: str, password: str, phone_number: str) -> dict:
+        if not all([email, password, phone_number]):
+            return {"success": False, "message": "Todos os campos são obrigatórios"}
 
-    def login(self, email: str, password: str) -> Optional[dict]:
-        # Tenta encontrar o usuário com o email e senha fornecidos
+        if self.collection.find_one({"email": email}):
+            return {"success": False, "message": "Este email já está registrado"}
+
+        hashed_password = self.hash_password(password)
+        user_data = {
+            "email": email,
+            "password": hashed_password,
+            "phone_number": phone_number,
+            "verified": False,
+            "created_at": time.time()
+        }
+
+        try:
+            self.collection.insert_one(user_data)
+            with open(USER_DATA_FILE, 'a') as file:
+                file.write(f"{email},{hashed_password},{phone_number},registered\n")
+            
+            verification_code = self.send_verification_sms(phone_number)
+            if verification_code:
+                self.pending_verifications[email] = (verification_code, time.time())
+                return {"success": True, "message": "Registro realizado! Verifique o código enviado ao seu telefone"}
+            return {"success": False, "message": "Falha ao enviar SMS de verificação"}
+        except Exception as e:
+            return {"success": False, "message": f"Erro no registro: {str(e)}"}
+
+    def send_verification_sms(self, phone_number: str) -> Optional[str]:
+        if not phone_number:
+            print("Número de telefone não fornecido")
+            return None
+        verification_code = str(random.randint(100000, 999999))
+        try:
+            message = self.twilio_client.messages.create(
+                body=f"Seu código de verificação QuickCrypt é: {verification_code}",
+                from_=TWILIO_PHONE_NUMBER,
+                to=phone_number
+            )
+            print(f"SMS enviado para {phone_number} - SID: {message.sid}")
+            return verification_code
+        except TwilioRestException as e:
+            print(f"Falha ao enviar SMS: {str(e)}")
+            return None
+
+    def verify_code(self, email: str, code: str) -> dict:
+        if email not in self.pending_verifications:
+            return {"success": False, "message": "Nenhum código pendente para este email"}
+
+        stored_code, timestamp = self.pending_verifications[email]
+        if time.time() - timestamp > VERIFICATION_CODE_EXPIRY:
+            del self.pending_verifications[email]
+            return {"success": False, "message": "Código expirado"}
+
+        if code == stored_code:
+            try:
+                self.collection.update_one(
+                    {"email": email},
+                    {"$set": {"verified": True}}
+                )
+                del self.pending_verifications[email]
+                with open(USER_DATA_FILE, 'a') as file:
+                    file.write(f"{email},verified\n")
+                return {"success": True, "message": "Verificação concluída com sucesso"}
+            except Exception as e:
+                return {"success": False, "message": f"Erro ao verificar: {str(e)}"}
+        return {"success": False, "message": "Código inválido"}
+
+    def login(self, email: str, password: str) -> dict:
         hashed_password = self.hash_password(password)
         user = self.collection.find_one({"email": email, "password": hashed_password})
-        if user:
-            # Salva o login no arquivo
+
+        if not user:
+            return {"success": False, "message": "Credenciais inválidas"}
+
+        if not user.get("verified", False):
+            phone_number = user.get("phone_number")
+            if not phone_number:
+                return {"success": False, "message": "Número de telefone não registrado para esta conta. Registre-se novamente."}
+            
+            verification_code = self.send_verification_sms(phone_number)
+            if verification_code:
+                self.pending_verifications[email] = (verification_code, time.time())
+                return {"success": False, "message": "Conta não verificada. Novo código enviado ao seu telefone"}
+            return {"success": False, "message": "Conta não verificada e falha ao enviar SMS"}
+
+        try:
             with open(USER_DATA_FILE, 'a') as file:
                 file.write(f"{email},{hashed_password},login\n")
-            return user
-        return None
+            return {
+                "success": True,
+                "message": "Login bem-sucedido",
+                "user": {
+                    "email": user["email"],
+                    "phone_number": user.get("phone_number", "Não informado")
+                }
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Erro no login: {str(e)}"}
 
+def process_file(file_path: str, password: str, encrypt: bool = True) -> dict:
+    if not os.path.exists(file_path):
+        return {"success": False, "message": "Arquivo não encontrado"}
 
-def process_file(file_path: str, password: str, encrypt: bool = True) -> bool:
-    """
-    Processa (encripta ou desencripta) um arquivo em chunks, exibindo uma barra de progresso
-    baseada na quantidade de bytes processados.
-    """
     if isinstance(password, str):
         password = password.encode('utf-8')
     cryptor = CamelliaCryptor(password)
 
     try:
         file_size = os.path.getsize(file_path)
-        # Abre o arquivo de entrada e um arquivo temporário de saída;
-        # a barra de progresso é iniciada com o tamanho total do arquivo.
         with open(file_path, 'rb') as f, \
              open(file_path + '.tmp', 'wb') as out_file, \
              tqdm(total=file_size, unit='B', unit_scale=True, desc=os.path.basename(file_path)) as pbar:
@@ -128,9 +208,7 @@ def process_file(file_path: str, password: str, encrypt: bool = True) -> bool:
                 camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
                 encryptor = camellia_cipher.encryptor()
 
-                # Grava salt e IV na saída (eles não são contados como parte do processamento do arquivo original)
                 out_file.write(salt + iv)
-
                 while True:
                     chunk = f.read(8192)
                     if not chunk:
@@ -139,10 +217,9 @@ def process_file(file_path: str, password: str, encrypt: bool = True) -> bool:
                     pbar.update(len(chunk))
                 out_file.write(encryptor.finalize())
             else:
-                # Leitura dos dados iniciais: salt (16) e IV (16)
                 salt = f.read(16)
                 iv = f.read(16)
-                pbar.update(32)  # Atualiza a barra com os 32 bytes lidos
+                pbar.update(32)
                 key = cryptor._derive_key(salt)
                 camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
                 decryptor = camellia_cipher.decryptor()
@@ -155,20 +232,31 @@ def process_file(file_path: str, password: str, encrypt: bool = True) -> bool:
                     pbar.update(len(chunk))
                 out_file.write(decryptor.finalize())
 
-        # Substitui o arquivo original pelo arquivo processado
         os.replace(file_path + '.tmp', file_path)
+        file_hash = generate_file_hash(file_path)
+        return {"success": True, "message": "Arquivo processado com sucesso", "hash": file_hash}
     except Exception as e:
-        print(f"Erro ao processar o arquivo {file_path}: {e}")
-        return False
+        return {"success": False, "message": f"Erro ao processar arquivo: {str(e)}"}
 
-    return True
+def process_folder(folder_path: str, password: str, encrypt: bool = True) -> dict:
+    if not os.path.isdir(folder_path):
+        return {"success": False, "message": "Pasta não encontrada"}
 
+    results = []
+    total_files = sum(len(files) for _, _, files in os.walk(folder_path))
+    processed_files = 0
 
-def process_folder(folder_path: str, password: str, encrypt: bool = True):
-    """Processa (encripta ou desencripta) todos os arquivos de uma pasta."""
     for root, _, files in os.walk(folder_path):
         for file in files:
             file_path = os.path.join(root, file)
-            print(f"Processando: {file_path}")
-            if not process_file(file_path, password, encrypt):
-                print(f"Erro ao processar o arquivo {file_path}")
+            result = process_file(file_path, password, encrypt)
+            results.append({"file": file_path, **result})
+            processed_files += 1
+            print(f"Progresso: {processed_files}/{total_files} arquivos")
+
+    success = all(r["success"] for r in results)
+    return {
+        "success": success,
+        "message": "Processamento da pasta concluído" if success else "Erro em alguns arquivos",
+        "results": results
+    }
