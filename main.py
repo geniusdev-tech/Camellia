@@ -5,12 +5,17 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QFileDialog,
     QLineEdit, QLabel, QRadioButton, QMessageBox, QFormLayout, QProgressBar,
     QGroupBox, QHBoxLayout, QTreeView, QSplitter, QFileSystemModel, QTextEdit,
-    QComboBox, QMenu
+    QComboBox, QMenu, QInputDialog
 )
 from PySide6.QtCore import Qt, QThread, Signal, QDir, QTimer, QUrl
 from PySide6.QtGui import QIcon, QShortcut, QKeySequence, QDesktopServices, QAction
 
 from config import UserAuth, generate_file_hash, CamelliaCryptor, process_file, process_folder, format_eta
+from dotenv import load_dotenv
+import dropbox
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+from dropbox.exceptions import AuthError
 
 class FileProcessorThread(QThread):
     progressChanged = Signal(int, str)
@@ -64,11 +69,21 @@ class EncryptDecryptApp(QWidget):
         self.worker_thread = None
         self.recent_paths = []
         self.verification_code = None
+        
+        # Configuração para serviços de nuvem
+        load_dotenv()
+        self.google_drive_credentials_path = os.getenv("GOOGLE_DRIVE_CREDENTIALS_PATH")
+        print(f'caminho: {self.google_drive_credentials_path}')
+        self.dropbox_access_token = os.getenv("DROPBOX_ACCESS_TOKEN")
+        self.google_drive = None
+        self.dropbox_client = None
+        
         self.initUI()
         self.createShortcuts()
         self.disable_file_processing()
         self.apply_styles()
         self.setup_file_explorer_context_menu()
+        self.setup_cloud_services()
 
     def apply_styles(self):
         self.setStyleSheet("""
@@ -145,6 +160,35 @@ class EncryptDecryptApp(QWidget):
         QShortcut(QKeySequence('Ctrl+F'), self).activated.connect(self.browse_folder)
         QShortcut(QKeySequence('Ctrl+Q'), self).activated.connect(self.close)
         QShortcut(QKeySequence('Ctrl+R'), self).activated.connect(self.refresh_explorer)
+
+    def setup_cloud_services(self):
+        # Configurar Google Drive
+        try:
+            gauth = GoogleAuth()
+            # Especificar o caminho do arquivo client_secrets.json
+            if not self.google_drive_credentials_path or not os.path.exists(self.google_drive_credentials_path):
+                self.log_message("Arquivo client_secrets.json não encontrado. Integração com Google Drive desativada.")
+                self.google_drive = None
+            else:
+                gauth.LoadClientConfigFile(self.google_drive_credentials_path)
+                gauth.LocalWebserverAuth()  # Autenticação via navegador
+                self.google_drive = GoogleDrive(gauth)
+                self.log_message("Conexão com Google Drive estabelecida com sucesso.")
+        except Exception as e:
+            self.log_message(f"Erro ao conectar ao Google Drive: {str(e)}")
+            self.google_drive = None
+
+        # Configurar Dropbox
+        if not self.dropbox_access_token:
+            self.log_message("Token de acesso do Dropbox não configurado. Integração com Dropbox desativada.")
+            self.dropbox_client = None
+        else:
+            try:
+                self.dropbox_client = dropbox.Dropbox(self.dropbox_access_token)
+                self.log_message("Conexão com Dropbox estabelecida com sucesso.")
+            except AuthError as e:
+                self.log_message(f"Erro ao conectar ao Dropbox: {str(e)}")
+                self.dropbox_client = None
 
     def initUI(self):
         self.setWindowTitle('EnigmaShield')
@@ -228,18 +272,46 @@ class EncryptDecryptApp(QWidget):
 
         process_group = QGroupBox("Processing")
         process_layout = QVBoxLayout()
+
+        # Radio buttons para Encrypt/Decrypt
         radio_layout = QHBoxLayout()
         self.encrypt_radio = QRadioButton('Encrypt', self)
         self.decrypt_radio = QRadioButton('Decrypt', self)
         self.encrypt_radio.setChecked(True)
         radio_layout.addWidget(self.encrypt_radio)
         radio_layout.addWidget(self.decrypt_radio)
+
+        # Botão Process
         self.process_button = QPushButton('Process', self)
         self.process_button.clicked.connect(self.process)
+
+        # Barra de progresso
         self.progress_bar = QProgressBar(self)
+
+        # Seção de integração com a nuvem
+        cloud_layout = QVBoxLayout()
+        cloud_label = QLabel("Cloud Storage:")
+        self.cloud_service_combo = QComboBox(self)
+        self.cloud_service_combo.addItems(["Select Service", "Google Drive", "Dropbox"])
+        cloud_layout.addWidget(cloud_label)
+        cloud_layout.addWidget(self.cloud_service_combo)
+
+        # Botões para upload e download
+        cloud_buttons_layout = QHBoxLayout()
+        self.upload_cloud_button = QPushButton('Upload to Cloud', self)
+        self.upload_cloud_button.clicked.connect(self.upload_to_cloud)
+        self.upload_cloud_button.setEnabled(False)  # Desativado até que um arquivo seja processado
+        self.download_cloud_button = QPushButton('Download from Cloud', self)
+        self.download_cloud_button.clicked.connect(self.download_from_cloud)
+        cloud_buttons_layout.addWidget(self.upload_cloud_button)
+        cloud_buttons_layout.addWidget(self.download_cloud_button)
+        cloud_layout.addLayout(cloud_buttons_layout)
+
+        # Adicionar todos os elementos ao layout
         process_layout.addLayout(radio_layout)
         process_layout.addWidget(self.process_button)
         process_layout.addWidget(self.progress_bar)
+        process_layout.addLayout(cloud_layout)
         process_group.setLayout(process_layout)
         right_panel.addWidget(process_group)
 
@@ -368,6 +440,7 @@ class EncryptDecryptApp(QWidget):
             return
 
         self.process_button.setEnabled(False)
+        self.upload_cloud_button.setEnabled(False)  # Desativar o botão de upload até o processamento terminar
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("0% - Iniciando...")
         
@@ -389,6 +462,7 @@ class EncryptDecryptApp(QWidget):
         if result["success"]:
             message = f"Arquivo processado com sucesso!\nHash: {result.get('hash', 'N/A')}"
             QMessageBox.information(self, "Sucesso", message)
+            self.upload_cloud_button.setEnabled(True)  # Habilitar o botão de upload
         else:
             QMessageBox.critical(self, "Erro", result["message"])
         self.progress_bar.setValue(100)
@@ -398,11 +472,99 @@ class EncryptDecryptApp(QWidget):
         self.process_button.setEnabled(True)
         if result["success"]:
             QMessageBox.information(self, "Sucesso", result["message"])
+            self.upload_cloud_button.setEnabled(True)  # Habilitar o botão de upload
         else:
             details = "\n".join([f"{r['file']}: {r['message']}" for r in result["results"]])
             QMessageBox.critical(self, "Erro", f"{result['message']}\n\nDetalhes:\n{details}")
         self.progress_bar.setValue(100)
         self.progress_bar.setFormat("100% - Concluído")
+
+    def upload_to_cloud(self):
+        if not self.user_info or not self.user_info.get("success"):
+            QMessageBox.warning(self, "Atenção", "Por favor, faça login primeiro!")
+            return
+
+        file_path = self.file_path_display.text()
+        if not file_path:
+            QMessageBox.warning(self, "Atenção", "Por favor, processe um arquivo antes de fazer upload!")
+            return
+
+        service = self.cloud_service_combo.currentText()
+        if service == "Select Service":
+            QMessageBox.warning(self, "Atenção", "Por favor, selecione um serviço de nuvem!")
+            return
+
+        try:
+            if service == "Google Drive" and self.google_drive:
+                file_name = os.path.basename(file_path)
+                gfile = self.google_drive.CreateFile({'title': file_name})
+                gfile.SetContentFile(file_path)
+                gfile.Upload()
+                self.log_message(f"Arquivo {file_name} enviado para o Google Drive com sucesso.")
+                QMessageBox.information(self, "Sucesso", f"Arquivo {file_name} enviado para o Google Drive!")
+
+            elif service == "Dropbox" and self.dropbox_client:
+                file_name = os.path.basename(file_path)
+                with open(file_path, 'rb') as f:
+                    self.dropbox_client.files_upload(f.read(), f"/{file_name}", mute=True)
+                self.log_message(f"Arquivo {file_name} enviado para o Dropbox com sucesso.")
+                QMessageBox.information(self, "Sucesso", f"Arquivo {file_name} enviado para o Dropbox!")
+
+            else:
+                QMessageBox.critical(self, "Erro", f"Serviço {service} não está disponível ou não foi configurado corretamente.")
+        except Exception as e:
+            self.log_message(f"Erro ao fazer upload para {service}: {str(e)}")
+            QMessageBox.critical(self, "Erro", f"Erro ao fazer upload para {service}: {str(e)}")
+
+    def download_from_cloud(self):
+        if not self.user_info or not self.user_info.get("success"):
+            QMessageBox.warning(self, "Atenção", "Por favor, faça login primeiro!")
+            return
+
+        service = self.cloud_service_combo.currentText()
+        if service == "Select Service":
+            QMessageBox.warning(self, "Atenção", "Por favor, selecione um serviço de nuvem!")
+            return
+
+        try:
+            if service == "Google Drive" and self.google_drive:
+                file_list = self.google_drive.ListFile({'q': "'root' in parents and trashed=false"}).GetList()
+                if not file_list:
+                    QMessageBox.information(self, "Informação", "Nenhum arquivo encontrado no Google Drive.")
+                    return
+
+                # Mostrar uma lista de arquivos para o usuário selecionar
+                file_names = [f['title'] for f in file_list]
+                file_name, ok = QInputDialog.getItem(self, "Selecionar Arquivo", "Escolha um arquivo para baixar:", file_names, 0, False)
+                if ok and file_name:
+                    selected_file = next(f for f in file_list if f['title'] == file_name)
+                    download_path = os.path.join(QDir.homePath(), file_name)
+                    selected_file.GetContentFile(download_path)
+                    self.file_path_display.setText(download_path)
+                    self.log_message(f"Arquivo {file_name} baixado do Google Drive para {download_path}.")
+                    QMessageBox.information(self, "Sucesso", f"Arquivo {file_name} baixado! Você pode agora descriptografá-lo.")
+
+            elif service == "Dropbox" and self.dropbox_client:
+                result = self.dropbox_client.files_list_folder("")
+                if not result.entries:
+                    QMessageBox.information(self, "Informação", "Nenhum arquivo encontrado no Dropbox.")
+                    return
+
+                # Mostrar uma lista de arquivos para o usuário selecionar
+                file_names = [entry.name for entry in result.entries if isinstance(entry, dropbox.files.FileMetadata)]
+                file_name, ok = QInputDialog.getItem(self, "Selecionar Arquivo", "Escolha um arquivo para baixar:", file_names, 0, False)
+                if ok and file_name:
+                    download_path = os.path.join(QDir.homePath(), file_name)
+                    self.dropbox_client.files_download_to_file(download_path, f"/{file_name}")
+                    self.file_path_display.setText(download_path)
+                    self.log_message(f"Arquivo {file_name} baixado do Dropbox para {download_path}.")
+                    QMessageBox.information(self, "Sucesso", f"Arquivo {file_name} baixado! Você pode agora descriptografá-lo.")
+
+            else:
+                QMessageBox.critical(self, "Erro", f"Serviço {service} não está disponível ou não foi configurado corretamente.")
+        except Exception as e:
+            self.log_message(f"Erro ao baixar de {service}: {str(e)}")
+            QMessageBox.critical(self, "Erro", f"Erro ao baixar de {service}: {str(e)}")
 
     def register(self):
         email = self.email_entry.text()
@@ -493,6 +655,8 @@ class EncryptDecryptApp(QWidget):
         self.process_button.setEnabled(False)
         self.progress_bar.setEnabled(False)
         self.file_explorer.setEnabled(False)
+        self.upload_cloud_button.setEnabled(False)
+        self.download_cloud_button.setEnabled(False)
 
     def enable_file_processing(self):
         self.file_path_display.setEnabled(True)
@@ -504,6 +668,7 @@ class EncryptDecryptApp(QWidget):
         self.process_button.setEnabled(True)
         self.progress_bar.setEnabled(True)
         self.file_explorer.setEnabled(True)
+        self.download_cloud_button.setEnabled(True)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
