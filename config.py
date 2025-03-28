@@ -5,32 +5,25 @@ from dotenv import load_dotenv
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
-from typing import Optional, Tuple, Dict
-from tqdm import tqdm
+from typing import Optional, Tuple, Dict, Callable
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 import random
 import time
 
-# Carrega variáveis de ambiente
 load_dotenv()
 
-# Configurações do MongoDB
 MONGO_URI = os.getenv('MONGO_URI')
 MONGO_DB = os.getenv('MONGO_DB')
 MONGO_COLLECTION = os.getenv('MONGO_COLLECTION')
 USER_DATA_FILE = os.getenv('USER_DATA_FILE')
-
-# Configurações do Twilio
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
 TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
 
-# Tempo de expiração do código de verificação
 VERIFICATION_CODE_EXPIRY = 300
 
 def generate_file_hash(file_path: str) -> Optional[str]:
-    """Gera o hash SHA256 de um arquivo processando-o em chunks."""
     hasher = hashlib.sha256()
     try:
         with open(file_path, 'rb') as f:
@@ -42,8 +35,6 @@ def generate_file_hash(file_path: str) -> Optional[str]:
     return hasher.hexdigest()
 
 class CamelliaCryptor:
-    """Classe para encriptação e desencriptação usando Camellia"""
-    
     def __init__(self, password: bytes):
         self.password = password
 
@@ -72,8 +63,6 @@ class CamelliaCryptor:
         return decryptor.update(ciphertext) + decryptor.finalize()
 
 class UserAuth:
-    """Classe para gerenciamento de autenticação de usuários com SMS"""
-    
     def __init__(self):
         self.db_client = MongoClient(MONGO_URI)
         self.db = self.db_client[MONGO_DB]
@@ -187,7 +176,7 @@ class UserAuth:
         except Exception as e:
             return {"success": False, "message": f"Erro no login: {str(e)}"}
 
-def process_file(file_path: str, password: str, encrypt: bool = True) -> dict:
+def process_file(file_path: str, password: str, encrypt: bool = True, progress_callback: Optional[Callable[[int, str], None]] = None) -> dict:
     if not os.path.exists(file_path):
         return {"success": False, "message": "Arquivo não encontrado"}
 
@@ -197,10 +186,10 @@ def process_file(file_path: str, password: str, encrypt: bool = True) -> dict:
 
     try:
         file_size = os.path.getsize(file_path)
-        with open(file_path, 'rb') as f, \
-             open(file_path + '.tmp', 'wb') as out_file, \
-             tqdm(total=file_size, unit='B', unit_scale=True, desc=os.path.basename(file_path)) as pbar:
+        processed = 0
+        start_time = time.time()
 
+        with open(file_path, 'rb') as f, open(file_path + '.tmp', 'wb') as out_file:
             if encrypt:
                 salt = os.urandom(16)
                 iv = os.urandom(16)
@@ -209,27 +198,41 @@ def process_file(file_path: str, password: str, encrypt: bool = True) -> dict:
                 encryptor = camellia_cipher.encryptor()
 
                 out_file.write(salt + iv)
+                processed += 32  # Salt + IV
                 while True:
                     chunk = f.read(8192)
                     if not chunk:
                         break
                     out_file.write(encryptor.update(chunk))
-                    pbar.update(len(chunk))
+                    processed += len(chunk)
+                    if progress_callback:
+                        percent = int((processed / file_size) * 100)
+                        elapsed = time.time() - start_time
+                        eta = (elapsed / (processed / file_size)) - elapsed if processed > 0 else 0
+                        progress_callback(percent, f"{percent}% - ETA: {format_eta(eta)}")
                 out_file.write(encryptor.finalize())
             else:
                 salt = f.read(16)
                 iv = f.read(16)
-                pbar.update(32)
+                processed += 32
                 key = cryptor._derive_key(salt)
                 camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
                 decryptor = camellia_cipher.decryptor()
 
+                if progress_callback:
+                    percent = int((processed / file_size) * 100)
+                    progress_callback(percent, f"{percent}% - Iniciando...")
                 while True:
                     chunk = f.read(8192)
                     if not chunk:
                         break
                     out_file.write(decryptor.update(chunk))
-                    pbar.update(len(chunk))
+                    processed += len(chunk)
+                    if progress_callback:
+                        percent = int((processed / file_size) * 100)
+                        elapsed = time.time() - start_time
+                        eta = (elapsed / (processed / file_size)) - elapsed if processed > 0 else 0
+                        progress_callback(percent, f"{percent}% - ETA: {format_eta(eta)}")
                 out_file.write(decryptor.finalize())
 
         os.replace(file_path + '.tmp', file_path)
@@ -238,21 +241,26 @@ def process_file(file_path: str, password: str, encrypt: bool = True) -> dict:
     except Exception as e:
         return {"success": False, "message": f"Erro ao processar arquivo: {str(e)}"}
 
-def process_folder(folder_path: str, password: str, encrypt: bool = True) -> dict:
+def process_folder(folder_path: str, password: str, encrypt: bool = True, progress_callback: Optional[Callable[[int, str], None]] = None) -> dict:
     if not os.path.isdir(folder_path):
         return {"success": False, "message": "Pasta não encontrada"}
 
     results = []
     total_files = sum(len(files) for _, _, files in os.walk(folder_path))
     processed_files = 0
+    start_time = time.time()
 
     for root, _, files in os.walk(folder_path):
         for file in files:
             file_path = os.path.join(root, file)
-            result = process_file(file_path, password, encrypt)
+            result = process_file(file_path, password, encrypt, None)  # Não passa callback para arquivos individuais aqui
             results.append({"file": file_path, **result})
             processed_files += 1
-            print(f"Progresso: {processed_files}/{total_files} arquivos")
+            if progress_callback:
+                percent = int((processed_files / total_files) * 100)
+                elapsed = time.time() - start_time
+                eta = (elapsed / (processed_files / total_files)) - elapsed if processed_files > 0 else 0
+                progress_callback(percent, f"Arquivo {processed_files}/{total_files} - ETA: {format_eta(eta)}")
 
     success = all(r["success"] for r in results)
     return {
@@ -260,3 +268,10 @@ def process_folder(folder_path: str, password: str, encrypt: bool = True) -> dic
         "message": "Processamento da pasta concluído" if success else "Erro em alguns arquivos",
         "results": results
     }
+
+def format_eta(seconds):
+    seconds = int(seconds)
+    hrs = seconds // 3600
+    mins = (seconds % 3600) // 60
+    secs = seconds % 60
+    return f"{hrs:02d}:{mins:02d}:{secs:02d}"

@@ -10,14 +10,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QDir, QTimer, QUrl
 from PySide6.QtGui import QIcon, QShortcut, QKeySequence, QDesktopServices, QAction
 
-from config import UserAuth, generate_file_hash, CamelliaCryptor, process_file, process_folder
-
-def format_eta(seconds):
-    seconds = int(seconds)
-    hrs = seconds // 3600
-    mins = (seconds % 3600) // 60
-    secs = seconds % 60
-    return f"{hrs:02d}:{mins:02d}:{secs:02d}"
+from config import UserAuth, generate_file_hash, CamelliaCryptor, process_file, process_folder, format_eta
 
 class FileProcessorThread(QThread):
     progressChanged = Signal(int, str)
@@ -32,15 +25,12 @@ class FileProcessorThread(QThread):
 
     def run(self):
         self.logMessage.emit(f"Iniciando {'criptografia' if self.encrypt else 'descriptografia'} de {self.file_path}")
-        result = process_file(self.file_path, self.password, self.encrypt)
-        
-        file_size = os.path.getsize(self.file_path)
-        for i in range(0, 101, 10):
-            self.progressChanged.emit(i, f"{i}% - Processando...")
-            time.sleep(0.1)
-            
+        result = process_file(self.file_path, self.password, self.encrypt, self.progress_callback)
         self.logMessage.emit(result["message"])
         self.finishedProcessing.emit(result)
+
+    def progress_callback(self, percent: int, info: str):
+        self.progressChanged.emit(percent, info)
 
 class FolderProcessorThread(QThread):
     progressChanged = Signal(int, str)
@@ -55,16 +45,12 @@ class FolderProcessorThread(QThread):
 
     def run(self):
         self.logMessage.emit(f"Iniciando {'criptografia' if self.encrypt else 'descriptografia'} da pasta {self.folder_path}")
-        result = process_folder(self.folder_path, self.password, self.encrypt)
-        
-        total_files = sum(len(files) for _, _, files in os.walk(self.folder_path))
-        for i in range(total_files):
-            percent = int(((i + 1) / total_files) * 100)
-            self.progressChanged.emit(percent, f"Arquivo {i + 1}/{total_files} - Processando...")
-            time.sleep(0.1)
-            
+        result = process_folder(self.folder_path, self.password, self.encrypt, self.progress_callback)
         self.logMessage.emit(result["message"])
         self.finishedProcessing.emit(result)
+
+    def progress_callback(self, percent: int, info: str):
+        self.progressChanged.emit(percent, info)
 
 class EncryptDecryptApp(QWidget):
     def __init__(self):
@@ -161,7 +147,7 @@ class EncryptDecryptApp(QWidget):
         QShortcut(QKeySequence('Ctrl+R'), self).activated.connect(self.refresh_explorer)
 
     def initUI(self):
-        self.setWindowTitle('QuickCrypt 1.1')
+        self.setWindowTitle('EnigmaShield')
         self.setGeometry(100, 100, 1500, 700)
 
         main_layout = QHBoxLayout()
