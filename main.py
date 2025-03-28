@@ -1,11 +1,13 @@
 import sys
 import os
 import time
+import json
+import requests
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QFileDialog,
     QLineEdit, QLabel, QRadioButton, QMessageBox, QFormLayout, QProgressBar,
     QGroupBox, QHBoxLayout, QTreeView, QSplitter, QFileSystemModel, QTextEdit,
-    QComboBox, QMenu, QInputDialog
+    QComboBox, QMenu, QInputDialog, QMenuBar
 )
 from PySide6.QtCore import Qt, QThread, Signal, QDir, QTimer, QUrl
 from PySide6.QtGui import QIcon, QShortcut, QKeySequence, QDesktopServices, QAction
@@ -13,9 +15,12 @@ from PySide6.QtGui import QIcon, QShortcut, QKeySequence, QDesktopServices, QAct
 from config import UserAuth, generate_file_hash, CamelliaCryptor, process_file, process_folder, format_eta
 from dotenv import load_dotenv
 import dropbox
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
 from dropbox.exceptions import AuthError
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+import io
 
 class FileProcessorThread(QThread):
     progressChanged = Signal(int, str)
@@ -73,11 +78,12 @@ class EncryptDecryptApp(QWidget):
         # Configuração para serviços de nuvem
         load_dotenv()
         self.google_drive_credentials_path = os.getenv("GOOGLE_DRIVE_CREDENTIALS_PATH")
-        print(f'caminho: {self.google_drive_credentials_path}')
         self.dropbox_access_token = os.getenv("DROPBOX_ACCESS_TOKEN")
-        self.google_drive = None
+        self.google_drive_service = None
         self.dropbox_client = None
+        self.google_credentials = None
         
+        self.setAcceptDrops(True)  # Habilitar drag-and-drop
         self.initUI()
         self.createShortcuts()
         self.disable_file_processing()
@@ -163,32 +169,92 @@ class EncryptDecryptApp(QWidget):
 
     def setup_cloud_services(self):
         # Configurar Google Drive
-        try:
-            gauth = GoogleAuth()
-            # Especificar o caminho do arquivo client_secrets.json
-            if not self.google_drive_credentials_path or not os.path.exists(self.google_drive_credentials_path):
-                self.log_message("Arquivo client_secrets.json não encontrado. Integração com Google Drive desativada.")
-                self.google_drive = None
+        if not self.google_drive_credentials_path or not os.path.exists(self.google_drive_credentials_path):
+            self.log_message("Arquivo client_secrets.json não encontrado. Integração com Google Drive desativada.")
+            self.google_drive_service = None
+            self.google_drive_status.setText("Google Drive: Desconectado")
+            self.google_drive_status.setStyleSheet("color: red;")
+            self.auth_google_button.setEnabled(False)
+        else:
+            # Verificar se já temos credenciais salvas
+            if os.path.exists("credentials.json"):
+                with open("credentials.json", "r") as f:
+                    creds_dict = json.load(f)
+                    self.google_credentials = Credentials.from_authorized_user_info(creds_dict)
+                if self.google_credentials.expired:
+                    self.log_message("Credenciais do Google Drive expiraram. Autentique novamente.")
+                    self.google_drive_status.setText("Google Drive: Desconectado")
+                    self.google_drive_status.setStyleSheet("color: red;")
+                else:
+                    self.google_drive_service = build("drive", "v3", credentials=self.google_credentials)
+                    self.log_message("Conexão com Google Drive estabelecida com sucesso usando credenciais salvas.")
+                    self.google_drive_status.setText("Google Drive: Conectado")
+                    self.google_drive_status.setStyleSheet("color: green;")
+                    self.auth_google_button.setEnabled(False)
             else:
-                gauth.LoadClientConfigFile(self.google_drive_credentials_path)
-                gauth.LocalWebserverAuth()  # Autenticação via navegador
-                self.google_drive = GoogleDrive(gauth)
-                self.log_message("Conexão com Google Drive estabelecida com sucesso.")
-        except Exception as e:
-            self.log_message(f"Erro ao conectar ao Google Drive: {str(e)}")
-            self.google_drive = None
+                self.google_drive_status.setText("Google Drive: Desconectado")
+                self.google_drive_status.setStyleSheet("color: red;")
 
         # Configurar Dropbox
         if not self.dropbox_access_token:
             self.log_message("Token de acesso do Dropbox não configurado. Integração com Dropbox desativada.")
             self.dropbox_client = None
+            self.dropbox_status.setText("Dropbox: Desconectado")
+            self.dropbox_status.setStyleSheet("color: red;")
         else:
             try:
                 self.dropbox_client = dropbox.Dropbox(self.dropbox_access_token)
                 self.log_message("Conexão com Dropbox estabelecida com sucesso.")
+                self.dropbox_status.setText("Dropbox: Conectado")
+                self.dropbox_status.setStyleSheet("color: green;")
             except AuthError as e:
                 self.log_message(f"Erro ao conectar ao Dropbox: {str(e)}")
                 self.dropbox_client = None
+                self.dropbox_status.setText("Dropbox: Desconectado")
+                self.dropbox_status.setStyleSheet("color: red;")
+
+    def authenticate_google(self):
+        try:
+            # Carregar as credenciais do arquivo client_secrets.json
+            self.log_message(f"Tentando carregar {self.google_drive_credentials_path}")
+            scopes = ["https://www.googleapis.com/auth/drive.file"]
+            
+            # Configurar o fluxo de autenticação para Desktop app
+            flow = InstalledAppFlow.from_client_secrets_file(
+                self.google_drive_credentials_path,
+                scopes=scopes
+            )
+
+            # Abrir o navegador para autenticação
+            self.log_message("Abrindo navegador para autenticação...")
+            credentials = flow.run_local_server(
+                port=0,
+                open_browser=True,
+                prompt='consent',
+                authorization_prompt_message='Por favor, autentique no navegador que será aberto.'
+            )
+
+            # Salvar as credenciais
+            self.google_credentials = credentials
+            with open("credentials.json", "w") as f:
+                json.dump({
+                    "token": self.google_credentials.token,
+                    "refresh_token": self.google_credentials.refresh_token,
+                    "token_uri": self.google_credentials.token_uri,
+                    "client_id": self.google_credentials.client_id,
+                    "client_secret": self.google_credentials.client_secret,
+                    "scopes": self.google_credentials.scopes
+                }, f)
+
+            self.google_drive_service = build("drive", "v3", credentials=self.google_credentials)
+            self.log_message("Conexão com Google Drive estabelecida com sucesso.")
+            self.google_drive_status.setText("Google Drive: Conectado")
+            self.google_drive_status.setStyleSheet("color: green;")
+            self.auth_google_button.setEnabled(False)
+
+        except Exception as e:
+            self.log_message(f"Erro ao autenticar com o Google Drive: {str(e)}")
+            QMessageBox.critical(self, "Erro", f"Erro ao autenticar: {str(e)}")
 
     def initUI(self):
         self.setWindowTitle('EnigmaShield')
@@ -235,10 +301,12 @@ class EncryptDecryptApp(QWidget):
         self.file_path_display = QLineEdit(self)
         self.file_path_display.setReadOnly(True)
         self.browse_file_button = QPushButton('Browse File', self)
+        self.browse_file_button.setIcon(QIcon.fromTheme("document-open"))
         self.browse_file_button.clicked.connect(self.browse_file)
         self.folder_path_display = QLineEdit(self)
         self.folder_path_display.setReadOnly(True)
         self.browse_folder_button = QPushButton('Browse Folder', self)
+        self.browse_folder_button.setIcon(QIcon.fromTheme("folder-open"))
         self.browse_folder_button.clicked.connect(self.browse_folder)
         selection_layout.addWidget(QLabel('Target File:'))
         selection_layout.addWidget(self.file_path_display)
@@ -283,6 +351,7 @@ class EncryptDecryptApp(QWidget):
 
         # Botão Process
         self.process_button = QPushButton('Process', self)
+        self.process_button.setIcon(QIcon.fromTheme("system-run"))
         self.process_button.clicked.connect(self.process)
 
         # Barra de progresso
@@ -293,21 +362,33 @@ class EncryptDecryptApp(QWidget):
         cloud_label = QLabel("Cloud Storage:")
         self.cloud_service_combo = QComboBox(self)
         self.cloud_service_combo.addItems(["Select Service", "Google Drive", "Dropbox"])
+        self.google_drive_status = QLabel("Google Drive: Desconectado", self)
+        self.google_drive_status.setStyleSheet("color: red;")
+        self.dropbox_status = QLabel("Dropbox: Desconectado", self)
+        self.dropbox_status.setStyleSheet("color: red;")
         cloud_layout.addWidget(cloud_label)
         cloud_layout.addWidget(self.cloud_service_combo)
+        cloud_layout.addWidget(self.google_drive_status)
+        cloud_layout.addWidget(self.dropbox_status)
+
+        # Autenticação do Google Drive
+        self.auth_google_button = QPushButton("Autenticar Google Drive", self)
+        self.auth_google_button.clicked.connect(self.authenticate_google)
+        cloud_layout.addWidget(self.auth_google_button)
 
         # Botões para upload e download
         cloud_buttons_layout = QHBoxLayout()
         self.upload_cloud_button = QPushButton('Upload to Cloud', self)
+        self.upload_cloud_button.setIcon(QIcon.fromTheme("go-up"))
         self.upload_cloud_button.clicked.connect(self.upload_to_cloud)
-        self.upload_cloud_button.setEnabled(False)  # Desativado até que um arquivo seja processado
+        self.upload_cloud_button.setEnabled(False)
         self.download_cloud_button = QPushButton('Download from Cloud', self)
+        self.download_cloud_button.setIcon(QIcon.fromTheme("go-down"))
         self.download_cloud_button.clicked.connect(self.download_from_cloud)
         cloud_buttons_layout.addWidget(self.upload_cloud_button)
         cloud_buttons_layout.addWidget(self.download_cloud_button)
         cloud_layout.addLayout(cloud_buttons_layout)
 
-        # Adicionar todos os elementos ao layout
         process_layout.addLayout(radio_layout)
         process_layout.addWidget(self.process_button)
         process_layout.addWidget(self.progress_bar)
@@ -319,7 +400,10 @@ class EncryptDecryptApp(QWidget):
         log_layout = QVBoxLayout()
         self.log_display = QTextEdit(self)
         self.log_display.setReadOnly(True)
+        self.clear_log_button = QPushButton("Limpar Log", self)
+        self.clear_log_button.clicked.connect(self.clear_log)
         log_layout.addWidget(self.log_display)
+        log_layout.addWidget(self.clear_log_button)
         log_group.setLayout(log_layout)
         right_panel.addWidget(log_group)
         right_panel.addStretch()
@@ -417,6 +501,22 @@ class EncryptDecryptApp(QWidget):
             self.folder_path_display.setText(folder_path)
             self.file_path_display.clear()
 
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if os.path.isfile(path):
+                self.file_path_display.setText(path)
+                self.folder_path_display.clear()
+            elif os.path.isdir(path):
+                self.folder_path_display.setText(path)
+                self.file_path_display.clear()
+
     def update_progress(self, value, info):
         self.progress_bar.setValue(value)
         self.progress_bar.setFormat(info)
@@ -425,6 +525,10 @@ class EncryptDecryptApp(QWidget):
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         self.log_display.append(f"[{timestamp}] {message}")
         self.log_display.ensureCursorVisible()
+
+    def clear_log(self):
+        self.log_display.clear()
+        self.log_message("Log limpo.")
 
     def process(self):
         if not self.user_info or not self.user_info.get("success"):
@@ -440,7 +544,7 @@ class EncryptDecryptApp(QWidget):
             return
 
         self.process_button.setEnabled(False)
-        self.upload_cloud_button.setEnabled(False)  # Desativar o botão de upload até o processamento terminar
+        self.upload_cloud_button.setEnabled(False)
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("0% - Iniciando...")
         
@@ -462,7 +566,7 @@ class EncryptDecryptApp(QWidget):
         if result["success"]:
             message = f"Arquivo processado com sucesso!\nHash: {result.get('hash', 'N/A')}"
             QMessageBox.information(self, "Sucesso", message)
-            self.upload_cloud_button.setEnabled(True)  # Habilitar o botão de upload
+            self.upload_cloud_button.setEnabled(True)
         else:
             QMessageBox.critical(self, "Erro", result["message"])
         self.progress_bar.setValue(100)
@@ -472,7 +576,7 @@ class EncryptDecryptApp(QWidget):
         self.process_button.setEnabled(True)
         if result["success"]:
             QMessageBox.information(self, "Sucesso", result["message"])
-            self.upload_cloud_button.setEnabled(True)  # Habilitar o botão de upload
+            self.upload_cloud_button.setEnabled(True)
         else:
             details = "\n".join([f"{r['file']}: {r['message']}" for r in result["results"]])
             QMessageBox.critical(self, "Erro", f"{result['message']}\n\nDetalhes:\n{details}")
@@ -495,12 +599,14 @@ class EncryptDecryptApp(QWidget):
             return
 
         try:
-            if service == "Google Drive" and self.google_drive:
+            if service == "Google Drive" and self.google_drive_service:
                 file_name = os.path.basename(file_path)
-                gfile = self.google_drive.CreateFile({'title': file_name})
-                gfile.SetContentFile(file_path)
-                gfile.Upload()
-                self.log_message(f"Arquivo {file_name} enviado para o Google Drive com sucesso.")
+                file_metadata = {"name": file_name}
+                media = MediaFileUpload(file_path)
+                file = self.google_drive_service.files().create(
+                    body=file_metadata, media_body=media, fields="id"
+                ).execute()
+                self.log_message(f"Arquivo {file_name} enviado para o Google Drive com sucesso. ID: {file.get('id')}")
                 QMessageBox.information(self, "Sucesso", f"Arquivo {file_name} enviado para o Google Drive!")
 
             elif service == "Dropbox" and self.dropbox_client:
@@ -527,19 +633,28 @@ class EncryptDecryptApp(QWidget):
             return
 
         try:
-            if service == "Google Drive" and self.google_drive:
-                file_list = self.google_drive.ListFile({'q': "'root' in parents and trashed=false"}).GetList()
+            if service == "Google Drive" and self.google_drive_service:
+                # Listar arquivos no Google Drive
+                results = self.google_drive_service.files().list(
+                    q="'root' in parents and trashed=false",
+                    fields="files(id, name)"
+                ).execute()
+                file_list = results.get("files", [])
                 if not file_list:
                     QMessageBox.information(self, "Informação", "Nenhum arquivo encontrado no Google Drive.")
                     return
 
-                # Mostrar uma lista de arquivos para o usuário selecionar
-                file_names = [f['title'] for f in file_list]
+                file_names = [f["name"] for f in file_list]
                 file_name, ok = QInputDialog.getItem(self, "Selecionar Arquivo", "Escolha um arquivo para baixar:", file_names, 0, False)
                 if ok and file_name:
-                    selected_file = next(f for f in file_list if f['title'] == file_name)
+                    file_id = next(f["id"] for f in file_list if f["name"] == file_name)
                     download_path = os.path.join(QDir.homePath(), file_name)
-                    selected_file.GetContentFile(download_path)
+                    request = self.google_drive_service.files().get_media(fileId=file_id)
+                    with open(download_path, "wb") as f:
+                        downloader = MediaIoBaseDownload(f, request)
+                        done = False
+                        while not done:
+                            status, done = downloader.next_chunk()
                     self.file_path_display.setText(download_path)
                     self.log_message(f"Arquivo {file_name} baixado do Google Drive para {download_path}.")
                     QMessageBox.information(self, "Sucesso", f"Arquivo {file_name} baixado! Você pode agora descriptografá-lo.")
@@ -550,7 +665,6 @@ class EncryptDecryptApp(QWidget):
                     QMessageBox.information(self, "Informação", "Nenhum arquivo encontrado no Dropbox.")
                     return
 
-                # Mostrar uma lista de arquivos para o usuário selecionar
                 file_names = [entry.name for entry in result.entries if isinstance(entry, dropbox.files.FileMetadata)]
                 file_name, ok = QInputDialog.getItem(self, "Selecionar Arquivo", "Escolha um arquivo para baixar:", file_names, 0, False)
                 if ok and file_name:
