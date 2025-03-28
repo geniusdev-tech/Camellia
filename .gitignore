@@ -136,6 +136,8 @@ ENV/
 env.bak/
 venv.bak/
 
+
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -169,3 +171,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Arquivos de autenticação do Google Drive
+client_secrets.json
+credentials.json
