@@ -189,7 +189,10 @@ def process_file(file_path: str, password: str, encrypt: bool = True, progress_c
         processed = 0
         start_time = time.time()
 
-        with open(file_path, 'rb') as f, open(file_path + '.tmp', 'wb') as out_file:
+        output_path = file_path + '.enc' if encrypt else file_path.replace('.enc', '')
+        temp_path = file_path + '.tmp'
+
+        with open(file_path, 'rb') as f_in, open(temp_path, 'wb') as f_out:
             if encrypt:
                 salt = os.urandom(16)
                 iv = os.urandom(16)
@@ -197,23 +200,30 @@ def process_file(file_path: str, password: str, encrypt: bool = True, progress_c
                 camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
                 encryptor = camellia_cipher.encryptor()
 
-                out_file.write(salt + iv)
-                processed += 32  # Salt + IV
+                # Escreve salt e iv no início do arquivo
+                f_out.write(salt + iv)
+                processed += 32
+                if progress_callback:
+                    percent = int((processed / file_size) * 100)
+                    progress_callback(percent, f"{percent}% - Iniciando...")
+
                 while True:
-                    chunk = f.read(8192)
+                    chunk = f_in.read(8192)
                     if not chunk:
                         break
-                    out_file.write(encryptor.update(chunk))
+                    f_out.write(encryptor.update(chunk))
                     processed += len(chunk)
                     if progress_callback:
                         percent = int((processed / file_size) * 100)
                         elapsed = time.time() - start_time
                         eta = (elapsed / (processed / file_size)) - elapsed if processed > 0 else 0
                         progress_callback(percent, f"{percent}% - ETA: {format_eta(eta)}")
-                out_file.write(encryptor.finalize())
+                f_out.write(encryptor.finalize())
             else:
-                salt = f.read(16)
-                iv = f.read(16)
+                # Reinicia a leitura do arquivo para descriptografia
+                f_in.seek(0)
+                salt = f_in.read(16)
+                iv = f_in.read(16)
                 processed += 32
                 key = cryptor._derive_key(salt)
                 camellia_cipher = Cipher(algorithms.Camellia(key), modes.CFB(iv))
@@ -222,26 +232,35 @@ def process_file(file_path: str, password: str, encrypt: bool = True, progress_c
                 if progress_callback:
                     percent = int((processed / file_size) * 100)
                     progress_callback(percent, f"{percent}% - Iniciando...")
+
                 while True:
-                    chunk = f.read(8192)
+                    chunk = f_in.read(8192)
                     if not chunk:
                         break
-                    out_file.write(decryptor.update(chunk))
+                    f_out.write(decryptor.update(chunk))
                     processed += len(chunk)
                     if progress_callback:
                         percent = int((processed / file_size) * 100)
                         elapsed = time.time() - start_time
                         eta = (elapsed / (processed / file_size)) - elapsed if processed > 0 else 0
                         progress_callback(percent, f"{percent}% - ETA: {format_eta(eta)}")
-                out_file.write(decryptor.finalize())
+                f_out.write(decryptor.finalize())
 
-        os.replace(file_path + '.tmp', file_path)
-        file_hash = generate_file_hash(file_path)
+        # Move o arquivo temporário para o destino final
+        os.replace(temp_path, output_path)
+
+        # Se for descriptografia, remove o arquivo original .enc (opcional, dependendo da lógica desejada)
+        if not encrypt and file_path.endswith('.enc'):
+            os.remove(file_path)
+
+        file_hash = generate_file_hash(output_path)
         return {"success": True, "message": "Arquivo processado com sucesso", "hash": file_hash}
     except Exception as e:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
         return {"success": False, "message": f"Erro ao processar arquivo: {str(e)}"}
 
-def process_folder(folder_path: str, password: str, encrypt: bool = True, progress_callback: Optional[Callable[[int, str], None]] = None) -> dict:
+def process_folder(folder_path: str, password: str, encrypt: bool = True, progress_callback: Optional[Callable[[int, str], None]] = None, check_state: Optional[Callable[[], bool]] = None) -> dict:
     if not os.path.isdir(folder_path):
         return {"success": False, "message": "Pasta não encontrada"}
 
@@ -253,6 +272,8 @@ def process_folder(folder_path: str, password: str, encrypt: bool = True, progre
     for root, _, files in os.walk(folder_path):
         for file in files:
             file_path = os.path.join(root, file)
+            if check_state and not check_state():  # Verifica se foi cancelado ou pausado
+                return {"success": False, "message": "Processamento cancelado pelo usuário", "results": results}
             result = process_file(file_path, password, encrypt, None)  # Não passa callback para arquivos individuais aqui
             results.append({"file": file_path, **result})
             processed_files += 1
