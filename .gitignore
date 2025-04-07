@@ -177,3 +177,4 @@ client_secrets.json
 credentials.json
 settings.json
 history.json
+users.db
