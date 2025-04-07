@@ -175,3 +175,5 @@ cython_debug/
 # Arquivos de autenticação do Google Drive
 client_secrets.json
 credentials.json
+settings.json
+history.json

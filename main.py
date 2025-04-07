@@ -5,24 +5,21 @@ import json
 import requests
 import qrcode
 import unittest
-import pyotp
-from PIL import Image
+import sqlite3
+import hashlib
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QFileDialog,
     QLineEdit, QLabel, QRadioButton, QMessageBox, QFormLayout, QProgressBar,
     QGroupBox, QHBoxLayout, QTreeView, QSplitter, QFileSystemModel, QTextEdit,
-    QComboBox, QMenu, QInputDialog, QMenuBar, QDialog
+    QComboBox, QMenu, QInputDialog, QMenuBar, QDialog, QTabWidget, QSpinBox, QComboBox as QComboBoxWidget
 )
 from PySide6.QtCore import Qt, QThread, Signal, QDir, QTimer, QUrl, QPropertyAnimation
 from PySide6.QtGui import QIcon, QShortcut, QKeySequence, QDesktopServices, QAction, QPixmap
-from config import generate_file_hash, CamelliaCryptor, process_file, process_folder, format_eta
+from config import generate_file_hash, CamelliaCryptor, process_file, process_folder, format_eta, organize_files
+from cloud_services import CloudServices
+from components.conversion import ConversionThread
 from dotenv import load_dotenv
-import dropbox
-from dropbox.exceptions import AuthError
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-import io
+import shutil
 
 class QRCodeDialog(QDialog):
     def __init__(self, qr_image_path, parent=None):
@@ -125,7 +122,7 @@ class AuthPollingThread(QThread):
         self.running = False
 
 class FileProcessorThread(QThread):
-    progressChanged = Signal(int, str)
+    progressChanged = Signal(int, str, str)
     finishedProcessing = Signal(dict)
     logMessage = Signal(str)
 
@@ -153,7 +150,7 @@ class FileProcessorThread(QThread):
         self.finishedProcessing.emit(result)
 
     def progress_callback(self, percent: int, info: str):
-        self.progressChanged.emit(percent, info)
+        self.progressChanged.emit(percent, info, self.file_path)
 
     def check_state(self):
         while self.paused and not self.canceled:
@@ -161,7 +158,7 @@ class FileProcessorThread(QThread):
         return not self.canceled
 
 class FolderProcessorThread(QThread):
-    progressChanged = Signal(int, str)
+    progressChanged = Signal(int, str, str)
     finishedProcessing = Signal(dict)
     logMessage = Signal(str)
 
@@ -189,32 +186,69 @@ class FolderProcessorThread(QThread):
         self.finishedProcessing.emit(result)
 
     def progress_callback(self, percent: int, info: str):
-        self.progressChanged.emit(percent, info)
+        self.progressChanged.emit(percent, info, self.folder_path)
 
     def check_state(self):
         while self.paused and not self.canceled:
             time.sleep(0.1)
         return not self.canceled
 
+class ConversionSettingsDialog(QDialog):
+    def __init__(self, file_type, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configurações de Conversão")
+        layout = QVBoxLayout()
+
+        self.quality_spin = None
+        self.bitrate_combo = None
+
+        if file_type == "Imagens":
+            layout.addWidget(QLabel("Qualidade da Imagem (1-100):"))
+            self.quality_spin = QSpinBox(self)
+            self.quality_spin.setRange(1, 100)
+            self.quality_spin.setValue(85)
+            layout.addWidget(self.quality_spin)
+        elif file_type == "Áudio":
+            layout.addWidget(QLabel("Taxa de Bits (Bitrate):"))
+            self.bitrate_combo = QComboBoxWidget(self)
+            self.bitrate_combo.addItems(["64k", "128k", "192k", "256k", "320k"])
+            self.bitrate_combo.setCurrentText("192k")
+            layout.addWidget(self.bitrate_combo)
+
+        self.ok_button = QPushButton("OK", self)
+        self.ok_button.clicked.connect(self.accept)
+        layout.addWidget(self.ok_button)
+
+        self.cancel_button = QPushButton("Cancelar", self)
+        self.cancel_button.clicked.connect(self.reject)
+        layout.addWidget(self.cancel_button)
+
+        self.setLayout(layout)
+
+    def get_settings(self):
+        return {
+            "quality": self.quality_spin.value() if self.quality_spin else None,
+            "bitrate": self.bitrate_combo.currentText() if self.bitrate_combo else None
+        }
+
 class EncryptDecryptApp(QWidget):
     def __init__(self):
         super().__init__()
         self.user_info = None
-        self.worker_thread = None
+        self.worker_threads = {}
+        self.progress_bars = {}
+        self.conversion_threads = {}
+        self.conversion_progress_bars = {}
         self.recent_paths = []
         self.auth_thread = None
         self.qr_dialog = None
-        self.totp_secret = None
+        self.progress_animation = None
+        self.db_connection = sqlite3.connect("users.db")
+        self.db_cursor = self.db_connection.cursor()
+        self.init_db()
         
         load_dotenv()
-        self.google_drive_credentials_path = os.getenv("GOOGLE_DRIVE_CREDENTIALS_PATH")
-        self.dropbox_access_token = os.getenv("DROPBOX_ACCESS_TOKEN")
-        self.google_drive_service = None
-        self.dropbox_client = None
-        self.google_credentials = None
-        self.client_id = None
-        self.client_secret = None
-        
+        self.cloud_services = CloudServices(self.log_message)
         self.setAcceptDrops(True)
         self.initUI()
         self.createShortcuts()
@@ -223,12 +257,34 @@ class EncryptDecryptApp(QWidget):
         self.setup_file_explorer_context_menu()
         self.setup_cloud_services()
 
+    def init_db(self):
+        self.db_cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        )''')
+        self.db_connection.commit()
+
     def apply_styles(self):
         self.setStyleSheet("""
             QWidget {
                 background-color: #1A1A1A;
                 color: #E0E0E0;
                 font-family: 'Segoe UI', sans-serif;
+            }
+            QTabWidget::pane {
+                border: 1px solid #4A90E2;
+                background: #252525;
+            }
+            QTabBar::tab {
+                background: #2D2D2D;
+                color: #E0E0E0;
+                padding: 8px;
+                border: 1px solid #404040;
+            }
+            QTabBar::tab:selected {
+                background: #4A90E2;
+                color: #FFFFFF;
             }
             QGroupBox {
                 border: 1px solid #4A90E2;
@@ -269,9 +325,11 @@ class EncryptDecryptApp(QWidget):
                 background: #252525;
                 text-align: center;
                 color: #FFFFFF;
+                font-size: 12px;
             }
             QProgressBar::chunk {
                 background-color: #4A90E2;
+                border-radius: 4px;
             }
             QTreeView {
                 background-color: #252525;
@@ -305,127 +363,117 @@ class EncryptDecryptApp(QWidget):
         QShortcut(QKeySequence('Ctrl+R'), self).activated.connect(self.refresh_explorer)
 
     def setup_cloud_services(self):
-        if not self.google_drive_credentials_path or not os.path.exists(self.google_drive_credentials_path):
-            self.log_message("Arquivo client_secrets.json não encontrado. Integração com Google Drive desativada.")
-            self.google_drive_service = None
-            self.google_drive_status.setText("Google Drive: Desconectado")
-            self.google_drive_status.setStyleSheet("color: red;")
-            self.auth_google_button.setEnabled(False)
-        else:
-            with open(self.google_drive_credentials_path, "r") as f:
-                client_secrets = json.load(f)
-                self.client_id = client_secrets["installed"]["client_id"]
-                self.client_secret = client_secrets["installed"]["client_secret"]
+        self.cloud_services.setup_cloud_services(
+            self.google_drive_status,
+            self.dropbox_status,
+            self.auth_google_button
+        )
 
-            if os.path.exists("credentials.json"):
-                with open("credentials.json", "r") as f:
-                    creds_dict = json.load(f)
-                    self.google_credentials = Credentials.from_authorized_user_info(creds_dict)
-                if self.google_credentials.expired:
-                    self.log_message("Credenciais do Google expiraram. Autentique novamente.")
-                    self.google_drive_status.setText("Google Drive: Desconectado")
-                    self.google_drive_status.setStyleSheet("color: red;")
-                    self.auth_google_button.setEnabled(True)
-                else:
-                    self.google_drive_service = build("drive", "v3", credentials=self.google_credentials)
-                    self.log_message("Conexão com Google Drive estabelecida com sucesso usando credenciais salvas.")
-                    self.google_drive_status.setText("Google Drive: Conectado")
-                    self.google_drive_status.setStyleSheet("color: green;")
-                    self.auth_google_button.setEnabled(False)
-                    self.authenticate_user_with_existing_credentials()
-            else:
-                self.google_drive_status.setText("Google Drive: Desconectado")
-                self.google_drive_status.setStyleSheet("color: red;")
-
-        if not self.dropbox_access_token:
-            self.log_message("Token de acesso do Dropbox não configurado. Integração com Dropbox desativada.")
-            self.dropbox_client = None
-            self.dropbox_status.setText("Dropbox: Desconectado")
-            self.dropbox_status.setStyleSheet("color: red;")
-        else:
-            try:
-                self.dropbox_client = dropbox.Dropbox(self.dropbox_access_token)
-                self.log_message("Conexão com Dropbox estabelecida com sucesso.")
-                self.dropbox_status.setText("Dropbox: Conectado")
-                self.dropbox_status.setStyleSheet("color: green;")
-            except AuthError as e:
-                self.log_message(f"Erro ao conectar ao Dropbox: {str(e)}")
-                self.dropbox_client = None
-                self.dropbox_status.setText("Dropbox: Desconectado")
-                self.dropbox_status.setStyleSheet("color: red;")
-
-    def authenticate_user_with_existing_credentials(self):
+    def is_online(self):
         try:
-            user_info_service = build("oauth2", "v2", credentials=self.google_credentials)
-            user_info = user_info_service.userinfo().get().execute()
-            self.user_info = {"success": True, "email": user_info.get("email")}
-            self.log_message(f"Usuário autenticado automaticamente: {self.user_info['email']}")
+            requests.get("https://www.google.com", timeout=5)
+            return True
+        except requests.ConnectionError:
+            return False
+
+    def local_login(self):
+        email, ok1 = QInputDialog.getText(self, "Login Local", "Email:")
+        if not ok1 or not email:
+            return
+
+        password, ok2 = QInputDialog.getText(self, "Login Local", "Senha:", QLineEdit.Password)
+        if not ok2 or not password:
+            return
+
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        self.db_cursor.execute("SELECT email FROM users WHERE email=? AND password=?", (email, hashed_password))
+        user = self.db_cursor.fetchone()
+
+        if user:
+            self.user_info = {"success": True, "email": email, "local": True}
+            self.log_message(f"Login local bem-sucedido: {email}")
             self.enable_file_processing()
             self.login_button.setEnabled(False)
-            QMessageBox.information(self, "Sucesso", f"Bem-vindo, {self.user_info['email']}!")
-            # Gerar TOTP secreto se não existir
-            if not self.totp_secret:
-                self.totp_secret = pyotp.random_base32()
-                with open("totp_secret.txt", "w") as f:
-                    f.write(self.totp_secret)
-        except Exception as e:
-            self.log_message(f"Erro ao obter informações do usuário: {str(e)}")
-            self.user_info = None
-            self.login_button.setEnabled(True)
+            self.local_login_button.setEnabled(False)
+            QMessageBox.information(self, "Sucesso", f"Bem-vindo, {email} (Login Local)!")
+        else:
+            QMessageBox.warning(self, "Erro", "Credenciais inválidas ou usuário não registrado.")
+
+    def local_register(self):
+        email, ok1 = QInputDialog.getText(self, "Registrar Local", "Email:")
+        if not ok1 or not email:
+            return
+
+        password, ok2 = QInputDialog.getText(self, "Registrar Local", "Senha:", QLineEdit.Password)
+        if not ok2 or not password:
+            return
+
+        if len(password) < 8 or not any(c.isupper() for c in password) or not any(c.isdigit() for c in password):
+            QMessageBox.warning(self, "Erro", "A senha deve ter pelo menos 8 caracteres, com uma letra maiúscula e um número.")
+            return
+
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        try:
+            self.db_cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed_password))
+            self.db_connection.commit()
+            self.log_message(f"Usuário local registrado: {email}")
+            QMessageBox.information(self, "Sucesso", "Usuário registrado com sucesso! Faça login agora.")
+        except sqlite3.IntegrityError:
+            QMessageBox.warning(self, "Erro", "Este email já está registrado.")
 
     def authenticate_user(self):
-        try:
-            device_endpoint = "https://oauth2.googleapis.com/device/code"
-            device_params = {
-                "client_id": self.client_id,
-                "scope": "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file"
-            }
-            response = requests.post(device_endpoint, data=device_params)
-            response.raise_for_status()
-            device_data = response.json()
+        if self.is_online():
+            try:
+                with open(os.getenv("GOOGLE_DRIVE_CREDENTIALS_PATH"), "r") as f:
+                    client_secrets = json.load(f)
+                    self.client_id = client_secrets["installed"]["client_id"]
+                    self.client_secret = client_secrets["installed"]["client_secret"]
 
-            user_code = device_data["user_code"]
-            verification_url = device_data["verification_url"]
-            device_code = device_data["device_code"]
-            interval = device_data["interval"]
+                device_endpoint = "https://oauth2.googleapis.com/device/code"
+                device_params = {
+                    "client_id": self.client_id,
+                    "scope": "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file"
+                }
+                response = requests.post(device_endpoint, data=device_params)
+                response.raise_for_status()
+                device_data = response.json()
 
-            qr_url = f"{verification_url}?user_code={user_code}"
-            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
-            qr.add_data(qr_url)
-            qr.make(fit=True)
-            qr_img = qr.make_image(fill_color="black", back_color="white")
-            qr_image_path = "qrcode.png"
-            qr_img.save(qr_image_path)
+                user_code = device_data["user_code"]
+                verification_url = device_data["verification_url"]
+                device_code = device_data["device_code"]
+                interval = device_data["interval"]
 
-            self.qr_dialog = QRCodeDialog(qr_image_path, self)
-            self.qr_dialog.rejected.connect(lambda: self.on_qr_dialog_canceled(qr_image_path))
-            self.qr_dialog.show()
+                qr_url = f"{verification_url}?user_code={user_code}"
+                qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
+                qr.add_data(qr_url)
+                qr.make(fit=True)
+                qr_img = qr.make_image(fill_color="black", back_color="white")
+                qr_image_path = "qrcode.png"
+                qr_img.save(qr_image_path)
 
-            self.log_message("Escaneie o QR code para autenticar.")
+                self.qr_dialog = QRCodeDialog(qr_image_path, self)
+                self.qr_dialog.rejected.connect(lambda: self.on_qr_dialog_canceled(qr_image_path))
+                self.qr_dialog.show()
 
-            self.auth_thread = AuthPollingThread(self.client_id, self.client_secret, device_code, interval, timeout=300)
-            self.auth_thread.auth_success.connect(lambda token_data: self.on_auth_success(token_data, qr_image_path))
-            self.auth_thread.auth_failed.connect(lambda error: self.on_auth_failed(error, qr_image_path))
-            self.auth_thread.polling_stopped.connect(self.on_polling_stopped)
-            self.auth_thread.start()
+                self.log_message("Escaneie o QR code para autenticar.")
 
-            # Solicitar 2FA
-            if self.totp_secret:
-                totp = pyotp.TOTP(self.totp_secret)
-                code = QInputDialog.getText(self, "2FA", "Digite o código TOTP gerado no seu aplicativo de autenticação:")[0]
-                if not code or not totp.verify(code):
-                    QMessageBox.warning(self, "Erro", "Código TOTP inválido. Autenticação falhou.")
-                    self.on_qr_dialog_canceled(qr_image_path)
-                    return
+                self.auth_thread = AuthPollingThread(self.client_id, self.client_secret, device_code, interval, timeout=300)
+                self.auth_thread.auth_success.connect(lambda token_data: self.on_auth_success(token_data, qr_image_path))
+                self.auth_thread.auth_failed.connect(lambda error: self.on_auth_failed(error, qr_image_path))
+                self.auth_thread.polling_stopped.connect(self.on_polling_stopped)
+                self.auth_thread.start()
 
-        except Exception as e:
-            self.log_message(f"Erro ao iniciar autenticação com o Google: {str(e)}")
-            QMessageBox.critical(self, "Erro", f"Erro ao iniciar autenticação: {str(e)}")
-            if self.qr_dialog:
-                self.qr_dialog.close()
-                self.qr_dialog = None
-            if os.path.exists("qrcode.png"):
-                os.remove("qrcode.png")
+            except Exception as e:
+                self.log_message(f"Erro ao iniciar autenticação com o Google: {str(e)}")
+                QMessageBox.critical(self, "Erro", f"Erro ao iniciar autenticação: {str(e)}. Use o login local se estiver offline.")
+                if self.qr_dialog:
+                    self.qr_dialog.close()
+                    self.qr_dialog = None
+                if os.path.exists("qrcode.png"):
+                    os.remove("qrcode.png")
+        else:
+            self.log_message("Sem conexão com a internet. Use o login local.")
+            QMessageBox.warning(self, "Offline", "Sem conexão com a internet. Use o login local ou registre-se localmente.")
 
     def on_qr_dialog_canceled(self, qr_image_path):
         if self.auth_thread:
@@ -439,9 +487,10 @@ class EncryptDecryptApp(QWidget):
 
     def on_auth_success(self, token_data, qr_image_path):
         try:
+            from google.oauth2.credentials import Credentials
+            from googleapiclient.discovery import build
             access_token = token_data["access_token"]
             refresh_token = token_data.get("refresh_token")
-            expires_in = token_data["expires_in"]
             self.google_credentials = Credentials(
                 token=access_token,
                 refresh_token=refresh_token,
@@ -466,17 +515,11 @@ class EncryptDecryptApp(QWidget):
             self.log_message(f"Usuário autenticado: {self.user_info['email']}")
             self.enable_file_processing()
             self.login_button.setEnabled(False)
+            self.local_login_button.setEnabled(False)
             QMessageBox.information(self, "Sucesso", f"Bem-vindo, {self.user_info['email']}!")
-
-            self.google_drive_service = build("drive", "v3", credentials=self.google_credentials)
-            self.google_drive_status.setText("Google Drive: Conectado")
-            self.google_drive_status.setStyleSheet("color: green;")
-            self.auth_google_button.setEnabled(False)
-
         except Exception as e:
             self.log_message(f"Erro ao processar autenticação: {str(e)}")
             QMessageBox.critical(self, "Erro", f"Erro ao processar autenticação: {str(e)}")
-
         finally:
             if self.qr_dialog:
                 self.qr_dialog.close()
@@ -496,12 +539,8 @@ class EncryptDecryptApp(QWidget):
     def on_polling_stopped(self):
         self.auth_thread = None
 
-    def authenticate_google(self):
-        if not self.google_drive_service:
-            self.authenticate_user()
-
     def initUI(self):
-        self.setWindowTitle('EnigmaShield')
+        self.setWindowTitle('EnigmaShield - Gerenciador de Arquivos')
         self.setGeometry(100, 100, 1500, 850)
 
         main_layout = QHBoxLayout()
@@ -509,12 +548,21 @@ class EncryptDecryptApp(QWidget):
         left_panel = QVBoxLayout()
         left_panel.setSpacing(10)
 
-        auth_group = QGroupBox("Authentication")
+        auth_group = QGroupBox("Autenticação")
         auth_layout = QVBoxLayout()
         self.login_button = QPushButton('Login com Google', self)
         self.login_button.clicked.connect(self.authenticate_user)
         self.login_button.setToolTip("Login com Google (Ctrl+G)")
         auth_layout.addWidget(self.login_button)
+
+        self.local_login_button = QPushButton('Login Local', self)
+        self.local_login_button.clicked.connect(self.local_login)
+        auth_layout.addWidget(self.local_login_button)
+
+        self.local_register_button = QPushButton('Registrar Local', self)
+        self.local_register_button.clicked.connect(self.local_register)
+        auth_layout.addWidget(self.local_register_button)
+
         self.theme_button = QPushButton("Alternar Tema", self)
         self.theme_button.setObjectName("themeToggle")
         self.theme_button.clicked.connect(self.toggle_theme)
@@ -522,24 +570,24 @@ class EncryptDecryptApp(QWidget):
         auth_group.setLayout(auth_layout)
         left_panel.addWidget(auth_group)
 
-        selection_group = QGroupBox("Selection")
+        selection_group = QGroupBox("Seleção")
         selection_layout = QVBoxLayout()
         self.file_path_display = QLineEdit(self)
         self.file_path_display.setReadOnly(True)
         self.folder_path_display = QLineEdit(self)
         self.folder_path_display.setReadOnly(True)
-        self.browse_file_button = QPushButton('Browse File', self)
+        self.browse_file_button = QPushButton('Procurar Arquivo', self)
         self.browse_file_button.setIcon(QIcon.fromTheme("document-open"))
         self.browse_file_button.setToolTip("Selecionar arquivo (Ctrl+O)")
         self.browse_file_button.clicked.connect(self.browse_file)
-        self.browse_folder_button = QPushButton('Browse Folder', self)
+        self.browse_folder_button = QPushButton('Procurar Pasta', self)
         self.browse_folder_button.setIcon(QIcon.fromTheme("folder-open"))
         self.browse_folder_button.setToolTip("Selecionar pasta (Ctrl+F)")
         self.browse_folder_button.clicked.connect(self.browse_folder)
-        selection_layout.addWidget(QLabel('Target File:'))
+        selection_layout.addWidget(QLabel('Arquivo Alvo:'))
         selection_layout.addWidget(self.file_path_display)
         selection_layout.addWidget(self.browse_file_button)
-        selection_layout.addWidget(QLabel('Target Folder:'))
+        selection_layout.addWidget(QLabel('Pasta Alvo:'))
         selection_layout.addWidget(self.folder_path_display)
         selection_layout.addWidget(self.browse_folder_button)
         selection_group.setLayout(selection_layout)
@@ -548,8 +596,11 @@ class EncryptDecryptApp(QWidget):
 
         explorer_layout = QVBoxLayout()
         self.path_selector = QComboBox(self)
-        self.path_selector.addItems([QDir.homePath(), QDir.rootPath(), "Recent Locations"])
+        self.path_selector.addItems([QDir.homePath(), QDir.rootPath(), "Locais Recentes"])
         self.path_selector.currentTextChanged.connect(self.change_explorer_path)
+        self.search_bar = QLineEdit(self)
+        self.search_bar.setPlaceholderText("Pesquisar arquivos (nome, extensão, data)...")
+        self.search_bar.textChanged.connect(self.search_files)
         self.file_explorer = QTreeView(self)
         self.file_model = QFileSystemModel()
         self.file_model.setRootPath(QDir.homePath())
@@ -561,17 +612,21 @@ class EncryptDecryptApp(QWidget):
         self.file_explorer.clicked.connect(self.on_file_explorer_clicked)
         self.file_explorer.doubleClicked.connect(self.on_file_explorer_double_clicked)
         explorer_layout.addWidget(self.path_selector)
+        explorer_layout.addWidget(self.search_bar)
         explorer_layout.addWidget(self.file_explorer)
 
         right_panel = QVBoxLayout()
         right_panel.setSpacing(10)
 
-        process_group = QGroupBox("Processing")
-        process_layout = QVBoxLayout()
+        self.tab_widget = QTabWidget(self)
+        right_panel.addWidget(self.tab_widget)
+
+        self.process_tab = QWidget()
+        self.process_layout = QVBoxLayout()
 
         radio_layout = QHBoxLayout()
-        self.encrypt_radio = QRadioButton('Encrypt', self)
-        self.decrypt_radio = QRadioButton('Decrypt', self)
+        self.encrypt_radio = QRadioButton('Criptografar', self)
+        self.decrypt_radio = QRadioButton('Descriptografar', self)
         self.encrypt_radio.setChecked(True)
         radio_layout.addWidget(self.encrypt_radio)
         radio_layout.addWidget(self.decrypt_radio)
@@ -580,22 +635,26 @@ class EncryptDecryptApp(QWidget):
         self.password_entry.setEchoMode(QLineEdit.Password)
         self.password_entry.setPlaceholderText("Digite a senha (mín. 8 caracteres, 1 maiúscula, 1 número)")
 
-        self.process_button = QPushButton('Process', self)
+        self.process_button = QPushButton('Processar', self)
         self.process_button.setIcon(QIcon.fromTheme("system-run"))
         self.process_button.setToolTip("Iniciar processamento (Ctrl+P)")
         self.process_button.clicked.connect(self.process)
 
+        control_buttons_layout = QHBoxLayout()
         self.pause_button = QPushButton("Pausar", self)
         self.pause_button.clicked.connect(self.pause_processing)
         self.cancel_button = QPushButton("Cancelar", self)
         self.cancel_button.clicked.connect(self.cancel_processing)
+        control_buttons_layout.addWidget(self.pause_button)
+        control_buttons_layout.addWidget(self.cancel_button)
 
-        self.progress_bar = QProgressBar(self)
+        self.organize_button = QPushButton("Organizar Arquivos", self)
+        self.organize_button.clicked.connect(self.organize_files)
 
         cloud_layout = QVBoxLayout()
-        cloud_label = QLabel("Cloud Storage:")
+        cloud_label = QLabel("Armazenamento em Nuvem:")
         self.cloud_service_combo = QComboBox(self)
-        self.cloud_service_combo.addItems(["Select Service", "Google Drive", "Dropbox"])
+        self.cloud_service_combo.addItems(["Selecionar Serviço", "Google Drive", "Dropbox"])
         self.google_drive_status = QLabel("Google Drive: Desconectado", self)
         self.google_drive_status.setStyleSheet("color: red;")
         self.dropbox_status = QLabel("Dropbox: Desconectado", self)
@@ -606,33 +665,77 @@ class EncryptDecryptApp(QWidget):
         cloud_layout.addWidget(self.dropbox_status)
 
         self.auth_google_button = QPushButton("Autenticar Google Drive", self)
-        self.auth_google_button.clicked.connect(self.authenticate_google)
+        self.auth_google_button.clicked.connect(lambda: self.cloud_services.authenticate_google(self, self.auth_google_button, self.google_drive_status))
         cloud_layout.addWidget(self.auth_google_button)
 
         cloud_buttons_layout = QHBoxLayout()
-        self.upload_cloud_button = QPushButton('Upload to Cloud', self)
+        self.upload_cloud_button = QPushButton('Upload para Nuvem', self)
         self.upload_cloud_button.setIcon(QIcon.fromTheme("go-up"))
         self.upload_cloud_button.clicked.connect(self.upload_to_cloud)
         self.upload_cloud_button.setEnabled(False)
-        self.download_cloud_button = QPushButton('Download from Cloud', self)
+        self.download_cloud_button = QPushButton('Download da Nuvem', self)
         self.download_cloud_button.setIcon(QIcon.fromTheme("go-down"))
         self.download_cloud_button.clicked.connect(self.download_from_cloud)
         cloud_buttons_layout.addWidget(self.upload_cloud_button)
         cloud_buttons_layout.addWidget(self.download_cloud_button)
         cloud_layout.addLayout(cloud_buttons_layout)
 
-        process_layout.addLayout(radio_layout)
-        process_layout.addWidget(QLabel("Password:"))
-        process_layout.addWidget(self.password_entry)
-        process_layout.addWidget(self.process_button)
-        process_layout.addWidget(self.pause_button)
-        process_layout.addWidget(self.cancel_button)
-        process_layout.addWidget(self.progress_bar)
-        process_layout.addLayout(cloud_layout)
-        process_group.setLayout(process_layout)
-        right_panel.addWidget(process_group)
+        self.process_layout.addLayout(radio_layout)
+        self.process_layout.addWidget(QLabel("Senha:"))
+        self.process_layout.addWidget(self.password_entry)
+        self.process_layout.addWidget(self.process_button)
+        self.process_layout.addLayout(control_buttons_layout)
+        self.process_layout.addWidget(self.organize_button)
+        self.process_layout.addLayout(cloud_layout)
+        self.process_tab.setLayout(self.process_layout)
+        self.tab_widget.addTab(self.process_tab, "Processamento")
 
-        log_group = QGroupBox("Process Log")
+        self.conversion_tab = QWidget()
+        self.conversion_layout = QVBoxLayout()
+
+        self.conversion_input = QLineEdit(self)
+        self.conversion_input.setReadOnly(True)
+        self.conversion_browse_button = QPushButton("Selecionar Arquivo", self)
+        self.conversion_browse_button.clicked.connect(self.browse_conversion_file)
+
+        self.conversion_type_combo = QComboBox(self)
+        self.conversion_type_combo.addItems(["Imagens", "Documentos", "Áudio"])
+        self.conversion_type_combo.currentTextChanged.connect(self.update_conversion_formats)
+
+        self.conversion_format_combo = QComboBox(self)
+        self.update_conversion_formats("Imagens")
+
+        self.conversion_output_dir = QLineEdit(self)
+        self.conversion_output_dir.setReadOnly(True)
+        self.conversion_output_browse_button = QPushButton("Selecionar Diretório de Saída", self)
+        self.conversion_output_browse_button.clicked.connect(self.browse_conversion_output_dir)
+
+        self.conversion_button = QPushButton("Converter", self)
+        self.conversion_button.clicked.connect(self.convert_file)
+
+        self.conversion_pause_button = QPushButton("Pausar Conversão", self)
+        self.conversion_pause_button.clicked.connect(self.pause_conversion)
+
+        self.conversion_cancel_button = QPushButton("Cancelar Conversão", self)
+        self.conversion_cancel_button.clicked.connect(self.cancel_conversion)
+
+        self.conversion_layout.addWidget(QLabel("Arquivo de Entrada:"))
+        self.conversion_layout.addWidget(self.conversion_input)
+        self.conversion_layout.addWidget(self.conversion_browse_button)
+        self.conversion_layout.addWidget(QLabel("Tipo de Conversão:"))
+        self.conversion_layout.addWidget(self.conversion_type_combo)
+        self.conversion_layout.addWidget(QLabel("Formato de Saída:"))
+        self.conversion_layout.addWidget(self.conversion_format_combo)
+        self.conversion_layout.addWidget(QLabel("Diretório de Saída:"))
+        self.conversion_layout.addWidget(self.conversion_output_dir)
+        self.conversion_layout.addWidget(self.conversion_output_browse_button)
+        self.conversion_layout.addWidget(self.conversion_button)
+        self.conversion_layout.addWidget(self.conversion_pause_button)
+        self.conversion_layout.addWidget(self.conversion_cancel_button)
+        self.conversion_tab.setLayout(self.conversion_layout)
+        self.tab_widget.addTab(self.conversion_tab, "Conversão")
+
+        log_group = QGroupBox("Log de Processos")
         log_layout = QVBoxLayout()
         self.log_display = QTextEdit(self)
         self.log_display.setReadOnly(True)
@@ -662,6 +765,122 @@ class EncryptDecryptApp(QWidget):
         main_layout.addWidget(splitter)
         self.setLayout(main_layout)
 
+    def update_conversion_formats(self, conversion_type):
+        self.conversion_format_combo.clear()
+        formats = ConversionThread.SUPPORTED_FORMATS.get(conversion_type, {}).get("output", [])
+        self.conversion_format_combo.addItems(formats)
+
+    def browse_conversion_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Selecionar Arquivo para Conversão")
+        if file_path:
+            self.conversion_input.setText(file_path)
+            default_output_dir = os.path.dirname(file_path)
+            self.conversion_output_dir.setText(default_output_dir)
+            thread = ConversionThread(file_path, "", "")  # Apenas para detecção
+            file_type, formats = thread.detect_file_type()
+            if file_type:
+                self.conversion_type_combo.setCurrentText(file_type)
+                self.conversion_format_combo.clear()
+                self.conversion_format_combo.addItems(formats)
+            else:
+                QMessageBox.warning(self, "Erro", "Formato de arquivo não suportado!")
+
+    def browse_conversion_output_dir(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "Selecionar Diretório de Saída")
+        if dir_path:
+            self.conversion_output_dir.setText(dir_path)
+
+    def convert_file(self):
+        input_path = self.conversion_input.text()
+        output_dir = self.conversion_output_dir.text()
+        output_format = self.conversion_format_combo.currentText()
+        conversion_type = self.conversion_type_combo.currentText()
+
+        if not input_path:
+            QMessageBox.warning(self, "Atenção", "Selecione um arquivo de entrada!")
+            return
+        if not output_dir:
+            output_dir = os.path.dirname(input_path)
+            self.conversion_output_dir.setText(output_dir)
+
+        output_filename = f"{os.path.splitext(os.path.basename(input_path))[0]}.{output_format}"
+        output_path = os.path.join(output_dir, output_filename)
+
+        reply = QMessageBox.question(self, "Confirmação", f"Converter {input_path} para {output_format} em {output_path}?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.No:
+            return
+
+        settings_dialog = ConversionSettingsDialog(conversion_type, self)
+        if settings_dialog.exec() == QDialog.Accepted:
+            settings = settings_dialog.get_settings()
+        else:
+            return
+
+        progress_bar = QProgressBar(self)
+        progress_bar.setValue(0)
+        progress_bar.setMaximum(100)
+        progress_bar.setFormat(f"{os.path.basename(input_path)}: Convertendo... 0%")
+        self.conversion_layout.insertWidget(self.conversion_layout.count() - 3, progress_bar)
+        self.conversion_progress_bars[input_path] = progress_bar
+        animation = self.start_progress_animation(progress_bar)
+
+        thread = ConversionThread(input_path, output_path, output_format, quality=settings["quality"], bitrate=settings["bitrate"])
+        thread.progressChanged.connect(self.update_conversion_progress)
+        thread.finishedProcessing.connect(lambda result, p=input_path, a=animation: self.conversion_finished(result, p, a))
+        thread.logMessage.connect(self.log_message)
+        self.conversion_threads[input_path] = thread
+        thread.start()
+
+    def pause_conversion(self):
+        for thread in self.conversion_threads.values():
+            thread.pause()
+        self.conversion_pause_button.setText("Retomar Conversão")
+        self.conversion_pause_button.clicked.disconnect()
+        self.conversion_pause_button.clicked.connect(self.resume_conversion)
+
+    def resume_conversion(self):
+        for thread in self.conversion_threads.values():
+            thread.resume()
+        self.conversion_pause_button.setText("Pausar Conversão")
+        self.conversion_pause_button.clicked.disconnect()
+        self.conversion_pause_button.clicked.connect(self.pause_conversion)
+
+    def cancel_conversion(self):
+        for thread in self.conversion_threads.values():
+            thread.cancel()
+
+    def update_conversion_progress(self, value, info, path):
+        if path in self.conversion_progress_bars:
+            progress_bar = self.conversion_progress_bars[path]
+            progress_bar.setValue(value)
+            progress_bar.setFormat(f"{os.path.basename(path)}: {info}")
+
+    def conversion_finished(self, result, path, animation):
+        if path in self.conversion_progress_bars:
+            progress_bar = self.conversion_progress_bars[path]
+            self.stop_progress_animation(animation)
+            if result["success"]:
+                progress_bar.setFormat(f"{os.path.basename(path)}: Concluído com sucesso! 100%")
+                QMessageBox.information(self, "Sucesso", result["message"])
+            else:
+                progress_bar.setFormat(f"{os.path.basename(path)}: Erro: 100%")
+                QMessageBox.critical(self, "Erro", result["message"])
+            progress_bar.setValue(100)
+            QTimer.singleShot(2000, lambda: self.remove_conversion_progress_bar(path))
+
+        if path in self.conversion_threads:
+            del self.conversion_threads[path]
+        self.conversion_input.clear()
+        self.conversion_output_dir.clear()
+
+    def remove_conversion_progress_bar(self, path):
+        if path in self.conversion_progress_bars:
+            progress_bar = self.conversion_progress_bars[path]
+            self.conversion_layout.removeWidget(progress_bar)
+            progress_bar.deleteLater()
+            del self.conversion_progress_bars[path]
+
     def setup_file_explorer_context_menu(self):
         self.file_explorer.setContextMenuPolicy(Qt.CustomContextMenu)
         self.file_explorer.customContextMenuRequested.connect(self.show_context_menu)
@@ -674,19 +893,34 @@ class EncryptDecryptApp(QWidget):
         path = self.file_model.filePath(index)
         menu = QMenu(self)
         
-        open_action = QAction("Open", self)
+        open_action = QAction("Abrir", self)
         open_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(path)))
         menu.addAction(open_action)
         
         if os.path.isfile(path):
-            encrypt_action = QAction("Encrypt", self)
+            encrypt_action = QAction("Criptografar", self)
             encrypt_action.triggered.connect(lambda: self.quick_process(path, True))
-            decrypt_action = QAction("Decrypt", self)
+            decrypt_action = QAction("Descriptografar", self)
             decrypt_action.triggered.connect(lambda: self.quick_process(path, False))
             menu.addAction(encrypt_action)
             menu.addAction(decrypt_action)
+            convert_action = QAction("Converter", self)
+            convert_action.triggered.connect(lambda: self.quick_convert(path))
+            menu.addAction(convert_action)
         
-        refresh_action = QAction("Refresh", self)
+        rename_action = QAction("Renomear", self)
+        rename_action.triggered.connect(lambda: self.rename_file(path))
+        menu.addAction(rename_action)
+        
+        move_action = QAction("Mover", self)
+        move_action.triggered.connect(lambda: self.move_file(path))
+        menu.addAction(move_action)
+        
+        copy_action = QAction("Copiar", self)
+        copy_action.triggered.connect(lambda: self.copy_file(path))
+        menu.addAction(copy_action)
+        
+        refresh_action = QAction("Atualizar", self)
         refresh_action.triggered.connect(self.refresh_explorer)
         menu.addAction(refresh_action)
 
@@ -696,10 +930,51 @@ class EncryptDecryptApp(QWidget):
         self.file_path_display.setText(path)
         self.encrypt_radio.setChecked(encrypt)
         self.decrypt_radio.setChecked(not encrypt)
+        self.tab_widget.setCurrentWidget(self.process_tab)
         self.process()
 
+    def quick_convert(self, path):
+        self.conversion_input.setText(path)
+        self.tab_widget.setCurrentWidget(self.conversion_tab)
+
+    def rename_file(self, path):
+        new_name, ok = QInputDialog.getText(self, "Renomear", "Digite o novo nome:", text=os.path.basename(path))
+        if ok and new_name:
+            try:
+                new_path = os.path.join(os.path.dirname(path), new_name)
+                os.rename(path, new_path)
+                self.log_message(f"Arquivo renomeado de {path} para {new_path}")
+                self.refresh_explorer()
+            except Exception as e:
+                self.log_message(f"Erro ao renomear arquivo: {str(e)}")
+                QMessageBox.critical(self, "Erro", f"Erro ao renomear: {str(e)}")
+
+    def move_file(self, path):
+        dest_folder = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Destino")
+        if dest_folder:
+            try:
+                new_path = os.path.join(dest_folder, os.path.basename(path))
+                os.rename(path, new_path)
+                self.log_message(f"Arquivo movido de {path} para {new_path}")
+                self.refresh_explorer()
+            except Exception as e:
+                self.log_message(f"Erro ao mover arquivo: {str(e)}")
+                QMessageBox.critical(self, "Erro", f"Erro ao mover: {str(e)}")
+
+    def copy_file(self, path):
+        dest_folder = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Destino")
+        if dest_folder:
+            try:
+                new_path = os.path.join(dest_folder, os.path.basename(path))
+                shutil.copy2(path, new_path)
+                self.log_message(f"Arquivo copiado de {path} para {new_path}")
+                self.refresh_explorer()
+            except Exception as e:
+                self.log_message(f"Erro ao copiar arquivo: {str(e)}")
+                QMessageBox.critical(self, "Erro", f"Erro ao copiar: {str(e)}")
+
     def change_explorer_path(self, path):
-        if path == "Recent Locations":
+        if path == "Locais Recentes":
             self.path_selector.clear()
             self.path_selector.addItems([QDir.homePath(), QDir.rootPath()] + self.recent_paths)
             return
@@ -712,6 +987,47 @@ class EncryptDecryptApp(QWidget):
         current_path = self.file_model.filePath(self.file_explorer.rootIndex())
         self.file_model.setRootPath('')
         QTimer.singleShot(100, lambda: self.file_explorer.setRootIndex(self.file_model.index(current_path)))
+
+    def search_files(self, query):
+        if not query:
+            self.file_model.setNameFilters([])
+            return
+        
+        terms = query.lower().split()
+        name_filter = []
+        ext_filter = []
+        
+        for term in terms:
+            something = term.strip()
+            if something.startswith("."):
+                ext_filter.append(f"*{something}")
+            else:
+                name_filter.append(f"*{something}*")
+        
+        if name_filter or ext_filter:
+            self.file_model.setNameFilters(name_filter + ext_filter)
+        else:
+            self.file_model.setNameFilters([])
+
+        if self.cloud_service_combo.currentText() != "Selecionar Serviço":
+            self.search_cloud_files(query)
+
+    def search_cloud_files(self, query):
+        service = self.cloud_service_combo.currentText()
+        try:
+            if service == "Google Drive" and self.cloud_services.google_drive_service:
+                results = self.cloud_services.google_drive_service.files().list(
+                    q=f"{query} in:root -in:trash",
+                    fields="files(id, name)"
+                ).execute()
+                files = results.get("files", [])
+                self.log_message(f"Pesquisa no Google Drive encontrou {len(files)} arquivos: {[f['name'] for f in files]}")
+            elif service == "Dropbox" and self.cloud_services.dropbox_client:
+                results = self.cloud_services.dropbox_client.files_search_v2(query)
+                files = [match.metadata.name for match in results.matches]
+                self.log_message(f"Pesquisa no Dropbox encontrou {len(files)} arquivos: {files}")
+        except Exception as e:
+            self.log_message(f"Erro ao pesquisar na nuvem: {str(e)}")
 
     def on_file_explorer_clicked(self, index):
         path = self.file_model.filePath(index)
@@ -771,9 +1087,11 @@ class EncryptDecryptApp(QWidget):
                 self.folder_path_display.setText(path)
                 self.file_path_display.clear()
 
-    def update_progress(self, value, info):
-        self.progress_bar.setValue(value)
-        self.progress_bar.setFormat(f"{info} %p%")
+    def update_progress(self, value, info, path):
+        if path in self.progress_bars:
+            progress_bar = self.progress_bars[path]
+            progress_bar.setValue(value)
+            progress_bar.setFormat(f"{os.path.basename(path)}: {info} %p%")
 
     def log_message(self, message):
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -810,9 +1128,22 @@ class EncryptDecryptApp(QWidget):
         history_text = "\n".join([f"[{entry['timestamp']}] {entry['action']} de {entry['target']}: {entry['status']}" for entry in history])
         QMessageBox.information(self, "Histórico de Processos", history_text)
 
+    def start_progress_animation(self, progress_bar):
+        animation = QPropertyAnimation(progress_bar, b"windowOpacity")
+        animation.setDuration(1000)
+        animation.setStartValue(0.5)
+        animation.setEndValue(1.0)
+        animation.setLoopCount(-1)
+        animation.start()
+        return animation
+
+    def stop_progress_animation(self, animation):
+        if animation:
+            animation.stop()
+
     def process(self):
         if not self.user_info or not self.user_info.get("success"):
-            QMessageBox.warning(self, "Atenção", "Por favor, faça login com o Google primeiro!")
+            QMessageBox.warning(self, "Atenção", "Por favor, faça login primeiro (Google ou Local)!")
             return
 
         file_path = self.file_path_display.text()
@@ -842,178 +1173,159 @@ class EncryptDecryptApp(QWidget):
 
         self.process_button.setEnabled(False)
         self.upload_cloud_button.setEnabled(False)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Processando... 0%")
-        
+
         if file_path:
             file_paths = file_path.split("; ")
             for fp in file_paths:
-                self.worker_thread = FileProcessorThread(fp, password, self.encrypt_radio.isChecked())
-                self.worker_thread.progressChanged.connect(self.update_progress)
-                self.worker_thread.finishedProcessing.connect(self.file_processing_finished)
-                self.worker_thread.logMessage.connect(self.log_message)
-                self.worker_thread.start()
+                progress_bar = QProgressBar(self)
+                progress_bar.setValue(0)
+                progress_bar.setMaximum(100)
+                progress_bar.setFormat(f"{os.path.basename(fp)}: Processando... 0%")
+                self.process_layout.insertWidget(3, progress_bar)
+                self.progress_bars[fp] = progress_bar
+                animation = self.start_progress_animation(progress_bar)
+
+                thread = FileProcessorThread(fp, password, self.encrypt_radio.isChecked())
+                thread.progressChanged.connect(self.update_progress)
+                thread.finishedProcessing.connect(lambda result, p=fp, a=animation: self.file_processing_finished(result, p, a))
+                thread.logMessage.connect(self.log_message)
+                self.worker_threads[fp] = thread
+                thread.start()
         elif folder_path:
-            self.worker_thread = FolderProcessorThread(folder_path, password, self.encrypt_radio.isChecked())
-            self.worker_thread.progressChanged.connect(self.update_progress)
-            self.worker_thread.finishedProcessing.connect(self.folder_processing_finished)
-            self.worker_thread.logMessage.connect(self.log_message)
-            self.worker_thread.start()
+            progress_bar = QProgressBar(self)
+            progress_bar.setValue(0)
+            progress_bar.setMaximum(100)
+            progress_bar.setFormat(f"{os.path.basename(folder_path)}: Processando... 0%")
+            self.process_layout.insertWidget(3, progress_bar)
+            self.progress_bars[folder_path] = progress_bar
+            animation = self.start_progress_animation(progress_bar)
+
+            thread = FolderProcessorThread(folder_path, password, self.encrypt_radio.isChecked())
+            thread.progressChanged.connect(self.update_progress)
+            thread.finishedProcessing.connect(lambda result, p=folder_path, a=animation: self.folder_processing_finished(result, p, a))
+            thread.logMessage.connect(self.log_message)
+            self.worker_threads[folder_path] = thread
+            thread.start()
 
     def pause_processing(self):
-        if self.worker_thread:
-            self.worker_thread.pause()
-            self.pause_button.setText("Retomar")
-            self.pause_button.clicked.disconnect()
-            self.pause_button.clicked.connect(self.resume_processing)
+        for thread in self.worker_threads.values():
+            thread.pause()
+        self.pause_button.setText("Retomar")
+        self.pause_button.clicked.disconnect()
+        self.pause_button.clicked.connect(self.resume_processing)
 
     def resume_processing(self):
-        if self.worker_thread:
-            self.worker_thread.resume()
-            self.pause_button.setText("Pausar")
-            self.pause_button.clicked.disconnect()
-            self.pause_button.clicked.connect(self.pause_processing)
+        for thread in self.worker_threads.values():
+            thread.resume()
+        self.pause_button.setText("Pausar")
+        self.pause_button.clicked.disconnect()
+        self.pause_button.clicked.connect(self.pause_processing)
 
     def cancel_processing(self):
-        if self.worker_thread:
-            self.worker_thread.cancel()
+        for thread in self.worker_threads.values():
+            thread.cancel()
 
-    def file_processing_finished(self, result: dict):
+    def file_processing_finished(self, result: dict, path: str, animation):
         self.process_button.setEnabled(True)
         action = "criptografia" if self.encrypt_radio.isChecked() else "descriptografia"
-        target = self.file_path_display.text()
         status = "Sucesso" if result["success"] else "Falha"
-        self.save_to_history(action, target, status)
-        if result["success"]:
-            if not self.encrypt_radio.isChecked():
-                original_hash = generate_file_hash(self.file_path_display.text() + ".orig")
-                decrypted_hash = generate_file_hash(self.file_path_display.text())
-                if original_hash == decrypted_hash:
-                    self.log_message("Verificação de integridade: Arquivo descriptografado com sucesso!")
-                else:
-                    self.log_message("Verificação de integridade: Arquivo descriptografado não corresponde ao original!")
-            message = f"Arquivo processado com sucesso!\nHash: {result.get('hash', 'N/A')}"
-            self.progress_bar.setFormat("Concluído com sucesso! 100%")
-            QMessageBox.information(self, "Sucesso", message)
-            self.upload_cloud_button.setEnabled(True)
-        else:
-            self.progress_bar.setFormat("Erro: 100%")
-            QMessageBox.critical(self, "Erro", result["message"])
-        self.progress_bar.setValue(100)
+        self.save_to_history(action, path, status)
+        
+        if path in self.progress_bars:
+            progress_bar = self.progress_bars[path]
+            self.stop_progress_animation(animation)
+            if result["success"]:
+                if not self.encrypt_radio.isChecked():
+                    original_hash = generate_file_hash(path + ".orig")
+                    decrypted_hash = generate_file_hash(path)
+                    if original_hash == decrypted_hash:
+                        self.log_message("Verificação de integridade: Arquivo descriptografado com sucesso!")
+                    else:
+                        self.log_message("Verificação de integridade: Arquivo descriptografado não corresponde ao original!")
+                progress_bar.setFormat(f"{os.path.basename(path)}: Concluído com sucesso! 100%")
+                QMessageBox.information(self, "Sucesso", f"Arquivo {path} processado com sucesso!\nHash: {result.get('hash', 'N/A')}")
+                self.upload_cloud_button.setEnabled(True)
+            else:
+                progress_bar.setFormat(f"{os.path.basename(path)}: Erro: 100%")
+                QMessageBox.critical(self, "Erro", result["message"])
+            progress_bar.setValue(100)
+            QTimer.singleShot(2000, lambda: self.remove_progress_bar(path))
+
+        if path in self.worker_threads:
+            del self.worker_threads[path]
         self.password_entry.clear()
 
-    def folder_processing_finished(self, result: dict):
+    def folder_processing_finished(self, result: dict, path: str, animation):
         self.process_button.setEnabled(True)
         action = "criptografia" if self.encrypt_radio.isChecked() else "descriptografia"
-        target = self.folder_path_display.text()
         status = "Sucesso" if result["success"] else "Falha"
-        self.save_to_history(action, target, status)
-        if result["success"]:
-            self.progress_bar.setFormat("Concluído com sucesso! 100%")
-            QMessageBox.information(self, "Sucesso", result["message"])
-            self.upload_cloud_button.setEnabled(True)
-        else:
-            self.progress_bar.setFormat("Erro: 100%")
-            details = "\n".join([f"{r['file']}: {r['message']}" for r in result["results"]])
-            QMessageBox.critical(self, "Erro", f"{result['message']}\n\nDetalhes:\n{details}")
-        self.progress_bar.setValue(100)
+        self.save_to_history(action, path, status)
+        
+        if path in self.progress_bars:
+            progress_bar = self.progress_bars[path]
+            self.stop_progress_animation(animation)
+            if result["success"]:
+                progress_bar.setFormat(f"{os.path.basename(path)}: Concluído com sucesso! 100%")
+                QMessageBox.information(self, "Sucesso", result["message"])
+                self.upload_cloud_button.setEnabled(True)
+            else:
+                progress_bar.setFormat(f"{os.path.basename(path)}: Erro: 100%")
+                details = "\n".join([f"{r['file']}: {r['message']}" for r in result["results"]])
+                QMessageBox.critical(self, "Erro", f"{result['message']}\n\nDetalhes:\n{details}")
+            progress_bar.setValue(100)
+            QTimer.singleShot(2000, lambda: self.remove_progress_bar(path))
+
+        if path in self.worker_threads:
+            del self.worker_threads[path]
         self.password_entry.clear()
+
+    def remove_progress_bar(self, path):
+        if path in self.progress_bars:
+            progress_bar = self.progress_bars[path]
+            self.process_layout.removeWidget(progress_bar)
+            progress_bar.deleteLater()
+            del self.progress_bars[path]
 
     def upload_to_cloud(self):
         if not self.user_info or not self.user_info.get("success"):
-            QMessageBox.warning(self, "Atenção", "Por favor, faça login com o Google primeiro!")
+            QMessageBox.warning(self, "Atenção", "Por favor, faça login primeiro!")
+            return
+        if self.user_info.get("local") and not self.is_online():
+            QMessageBox.warning(self, "Atenção", "Upload para a nuvem requer conexão com a internet!")
             return
 
         file_path = self.file_path_display.text()
-        if not file_path:
-            QMessageBox.warning(self, "Atenção", "Por favor, processe um arquivo antes de fazer upload!")
-            return
-
         service = self.cloud_service_combo.currentText()
-        if service == "Select Service":
-            QMessageBox.warning(self, "Atenção", "Por favor, selecione um serviço de nuvem!")
-            return
-
-        try:
-            if service == "Google Drive" and self.google_drive_service:
-                file_name = os.path.basename(file_path)
-                file_metadata = {"name": file_name}
-                media = MediaFileUpload(file_path)
-                file = self.google_drive_service.files().create(
-                    body=file_metadata, media_body=media, fields="id"
-                ).execute()
-                self.log_message(f"Arquivo {file_name} enviado para o Google Drive com sucesso. ID: {file.get('id')}")
-                QMessageBox.information(self, "Sucesso", f"Arquivo {file_name} enviado para o Google Drive!")
-
-            elif service == "Dropbox" and self.dropbox_client:
-                file_name = os.path.basename(file_path)
-                with open(file_path, 'rb') as f:
-                    self.dropbox_client.files_upload(f.read(), f"/{file_name}", mute=True)
-                self.log_message(f"Arquivo {file_name} enviado para o Dropbox com sucesso.")
-                QMessageBox.information(self, "Sucesso", f"Arquivo {file_name} enviado para o Dropbox!")
-
-            else:
-                QMessageBox.critical(self, "Erro", f"Serviço {service} não está disponível ou não foi configurado corretamente.")
-        except Exception as e:
-            self.log_message(f"Erro ao fazer upload para {service}: {str(e)}")
-            QMessageBox.critical(self, "Erro", f"Erro ao fazer upload para {service}: {str(e)}")
+        self.cloud_services.upload_to_cloud(file_path, service, self)
 
     def download_from_cloud(self):
         if not self.user_info or not self.user_info.get("success"):
-            QMessageBox.warning(self, "Atenção", "Por favor, faça login com o Google primeiro!")
+            QMessageBox.warning(self, "Atenção", "Por favor, faça login primeiro!")
+            return
+        if self.user_info.get("local") and not self.is_online():
+            QMessageBox.warning(self, "Atenção", "Download da nuvem requer conexão com a internet!")
             return
 
         service = self.cloud_service_combo.currentText()
-        if service == "Select Service":
-            QMessageBox.warning(self, "Atenção", "Por favor, selecione um serviço de nuvem!")
+        self.cloud_services.download_from_cloud(service, self, self.file_path_display.setText)
+
+    def organize_files(self):
+        folder_path = self.folder_path_display.text()
+        if not folder_path:
+            QMessageBox.warning(self, "Atenção", "Selecione uma pasta para organizar!")
             return
-
-        try:
-            if service == "Google Drive" and self.google_drive_service:
-                results = self.google_drive_service.files().list(
-                    q="'root' in parents and trashed=false",
-                    fields="files(id, name)"
-                ).execute()
-                file_list = results.get("files", [])
-                if not file_list:
-                    QMessageBox.information(self, "Informação", "Nenhum arquivo encontrado no Google Drive.")
-                    return
-
-                file_names = [f["name"] for f in file_list]
-                file_name, ok = QInputDialog.getItem(self, "Selecionar Arquivo", "Escolha um arquivo para baixar:", file_names, 0, False)
-                if ok and file_name:
-                    file_id = next(f["id"] for f in file_list if f["name"] == file_name)
-                    download_path = os.path.join(QDir.homePath(), file_name)
-                    request = self.google_drive_service.files().get_media(fileId=file_id)
-                    with open(download_path, "wb") as f:
-                        downloader = MediaIoBaseDownload(f, request)
-                        done = False
-                        while not done:
-                            status, done = downloader.next_chunk()
-                    self.file_path_display.setText(download_path)
-                    self.log_message(f"Arquivo {file_name} baixado do Google Drive para {download_path}.")
-                    QMessageBox.information(self, "Sucesso", f"Arquivo {file_name} baixado! Você pode agora descriptografá-lo.")
-
-            elif service == "Dropbox" and self.dropbox_client:
-                result = self.dropbox_client.files_list_folder("")
-                if not result.entries:
-                    QMessageBox.information(self, "Informação", "Nenhum arquivo encontrado no Dropbox.")
-                    return
-
-                file_names = [entry.name for entry in result.entries if isinstance(entry, dropbox.files.FileMetadata)]
-                file_name, ok = QInputDialog.getItem(self, "Selecionar Arquivo", "Escolha um arquivo para baixar:", file_names, 0, False)
-                if ok and file_name:
-                    download_path = os.path.join(QDir.homePath(), file_name)
-                    self.dropbox_client.files_download_to_file(download_path, f"/{file_name}")
-                    self.file_path_display.setText(download_path)
-                    self.log_message(f"Arquivo {file_name} baixado do Dropbox para {download_path}.")
-                    QMessageBox.information(self, "Sucesso", f"Arquivo {file_name} baixado! Você pode agora descriptografá-lo.")
-
+        
+        reply = QMessageBox.question(self, "Confirmação", f"Organizar arquivos em {folder_path}?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            result = organize_files(folder_path)
+            if result["success"]:
+                self.log_message("Arquivos organizados com sucesso!")
+                self.refresh_explorer()
             else:
-                QMessageBox.critical(self, "Erro", f"Serviço {service} não está disponível ou não foi configurado corretamente.")
-        except Exception as e:
-            self.log_message(f"Erro ao baixar de {service}: {str(e)}")
-            QMessageBox.critical(self, "Erro", f"Erro ao baixar de {service}: {str(e)}")
+                details = "\n".join([f"{r['file']}: {r.get('message', 'Sucesso')}" for r in result["results"]])
+                self.log_message(f"Erro ao organizar alguns arquivos:\n{details}")
+                QMessageBox.critical(self, "Erro", f"Erro ao organizar:\n{details}")
 
     def disable_file_processing(self):
         self.file_path_display.setEnabled(False)
@@ -1024,12 +1336,20 @@ class EncryptDecryptApp(QWidget):
         self.decrypt_radio.setEnabled(False)
         self.password_entry.setEnabled(False)
         self.process_button.setEnabled(False)
-        self.progress_bar.setEnabled(False)
         self.file_explorer.setEnabled(False)
         self.upload_cloud_button.setEnabled(False)
         self.download_cloud_button.setEnabled(False)
         self.pause_button.setEnabled(False)
         self.cancel_button.setEnabled(False)
+        self.organize_button.setEnabled(False)
+        self.conversion_input.setEnabled(False)
+        self.conversion_browse_button.setEnabled(False)
+        self.conversion_type_combo.setEnabled(False)
+        self.conversion_format_combo.setEnabled(False)
+        self.conversion_output_dir.setEnabled(False)
+        self.conversion_output_browse_button.setEnabled(False)
+        self.conversion_button.setEnabled(False)
+        self.conversion_cancel_button.setEnabled(False)
 
     def enable_file_processing(self):
         self.file_path_display.setEnabled(True)
@@ -1040,11 +1360,19 @@ class EncryptDecryptApp(QWidget):
         self.decrypt_radio.setEnabled(True)
         self.password_entry.setEnabled(True)
         self.process_button.setEnabled(True)
-        self.progress_bar.setEnabled(True)
         self.file_explorer.setEnabled(True)
         self.download_cloud_button.setEnabled(True)
         self.pause_button.setEnabled(True)
         self.cancel_button.setEnabled(True)
+        self.organize_button.setEnabled(True)
+        self.conversion_input.setEnabled(True)
+        self.conversion_browse_button.setEnabled(True)
+        self.conversion_type_combo.setEnabled(True)
+        self.conversion_format_combo.setEnabled(True)
+        self.conversion_output_dir.setEnabled(True)
+        self.conversion_output_browse_button.setEnabled(True)
+        self.conversion_button.setEnabled(True)
+        self.conversion_cancel_button.setEnabled(True)
 
     def toggle_theme(self):
         if self.styleSheet().startswith("QWidget { background-color: #1A1A1A;"):
@@ -1053,6 +1381,20 @@ class EncryptDecryptApp(QWidget):
                     background-color: #FFFFFF;
                     color: #000000;
                     font-family: 'Segoe UI', sans-serif;
+                }
+                QTabWidget::pane {
+                    border: 1px solid #4A90E2;
+                    background: #F0F0F0;
+                }
+                QTabBar::tab {
+                    background: #E0E0E0;
+                    color: #000000;
+                    padding: 8px;
+                    border: 1px solid #404040;
+                }
+                QTabBar::tab:selected {
+                    background: #4A90E2;
+                    color: #FFFFFF;
                 }
                 QGroupBox {
                     border: 1px solid #4A90E2;
@@ -1093,9 +1435,11 @@ class EncryptDecryptApp(QWidget):
                     background: #F0F0F0;
                     text-align: center;
                     color: #000000;
+                    font-size: 12px;
                 }
                 QProgressBar::chunk {
                     background-color: #4A90E2;
+                    border-radius: 4px;
                 }
                 QTreeView {
                     background-color: #F0F0F0;
@@ -1143,7 +1487,6 @@ class TestEncryption(unittest.TestCase):
         print(f"Resultado da criptografia: {result_encrypt}")
         self.assertTrue(result_encrypt["success"], f"Falha na criptografia: {result_encrypt.get('message', 'Mensagem de erro não fornecida')}")
         
-        # Verificar se o arquivo criptografado existe
         encrypted_file = self.test_file + ".enc"
         self.assertTrue(os.path.exists(encrypted_file), f"Arquivo criptografado {encrypted_file} não foi criado")
 
@@ -1152,7 +1495,6 @@ class TestEncryption(unittest.TestCase):
         print(f"Resultado da descriptografia: {result_decrypt}")
         self.assertTrue(result_decrypt["success"], f"Falha na descriptografia: {result_decrypt.get('message', 'Mensagem de erro não fornecida')}")
         
-        # Verificar se o arquivo descriptografado existe
         decrypted_file = self.test_file
         self.assertTrue(os.path.exists(decrypted_file), f"Arquivo descriptografado {decrypted_file} não foi criado")
 
@@ -1164,6 +1506,5 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     ex = EncryptDecryptApp()
     ex.show()
-    # Executar testes unitários
     unittest.main(argv=['first-arg-is-ignored'], exit=False)
     sys.exit(app.exec())
