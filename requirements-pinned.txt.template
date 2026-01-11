@@ -1,0 +1,18 @@
+## Template: run `scripts/pin_requirements.sh` to generate a real pinned file.
+# This file is a placeholder to document the recommended workflow.
+# Do NOT use this file as-is for CI; instead generate `requirements-pinned.txt`.
+
+# Example pinned entries (replace by running the script):
+python-dotenv==1.0.1
+cryptography==46.0.3
+PySide6==6.7.1
+pyotp==
+qrcode==
+Flask==
+pywebview==
+qtpy==
+flask-talisman==
+flask-seasurf==
+Flask-Limiter==
+pynacl==
+boto3==

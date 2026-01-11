@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-pinned.txt ]; then
+            pip install -r requirements-pinned.txt
+          else
+            pip install -r requirements.txt
+          fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || true; fi
+
+      - name: Lint (flake8)
+        run: |
+          flake8 || true
+
+      - name: Security scan (Bandit)
+        run: |
+          bandit -r . -ll || true
+
+      - name: Security scan (safety)
+        run: |
+          python -m pip install safety || true
+          if [ -f requirements-pinned.txt ]; then
+            safety check --file=requirements-pinned.txt || true
+          else
+            echo "requirements-pinned.txt not found; safety scan skipped. Use scripts/pin_requirements.sh to generate it." 
+          fi
+
+      - name: Run tests (pytest)
+        run: |
+          pytest -q

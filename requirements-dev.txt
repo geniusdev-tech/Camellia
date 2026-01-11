@@ -1,0 +1,5 @@
+pytest
+bandit
+safety
+flake8
+argon2-cffi

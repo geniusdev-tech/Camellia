@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camellia Shield</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="brand">
+                <span>🛡️</span> Camellia Shield
+            </div>
+
+            <!-- Auth Section -->
+            <div class="auth-section">
+                <div id="authForms">
+                    <div class="auth-form">
+                        <input type="text" id="emailInput" placeholder="Email / Usuário">
+                        <input type="password" id="pwdInput" placeholder="Senha">
+                        <div style="display:flex; gap:5px;">
+                            <button id="loginBtn" style="flex:1">Login</button>
+                            <button id="registerBtn" class="secondary" style="flex:1">Registrar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="userInfo" style="display:none;">
+                    <div class="user-info">
+                        <div style="font-size:3rem;">👤</div>
+                        <div id="userEmailDisplay" style="margin:5px 0; font-weight:bold;">user@example.com</div>
+                        <button id="setup2faBtn" class="secondary" style="width:100%">Ativar 2FA</button>
+                        <button id="disable2faBtn" class="secondary" style="width:100%; display:none;">Desativar
+                            2FA</button>
+                        <button id="logoutBtn" style="width:100%; margin-top:5px; background:#444;">Sair</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Global Actions -->
+            <button id="organizeBtn" class="secondary">📁 Organizar Pasta Atual</button>
+            <div style="flex:1"></div>
+            <div style="font-size:0.8rem; color:#666; text-align:center;">v2.0 Webview</div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- File Explorer Header -->
+            <div class="explorer-toolbar">
+                <button id="btnUp" class="secondary" title="Subir Nível">⬆️</button>
+                <button id="refreshBtn" class="secondary" title="Atualizar">🔄</button>
+
+                <select id="deviceSelector"
+                    style="margin-left:5px; padding:5px; background:var(--bg-secondary); color:var(--text-primary); border:none; border-radius:4px;">
+                    <option value="home" data-id="local">💻 Local</option>
+                </select>
+
+                <span id="currentPathDisplay"
+                    style="margin-left:10px; font-family:monospace; color:#aaa; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">/</span>
+                <input type="hidden" id="parentPath">
+                <input type="hidden" id="selectedPathInput">
+            </div>
+
+            <!-- File List -->
+            <div class="file-list-container" id="fileList">
+                <!-- Items injected by JS -->
+            </div>
+
+            <!-- Process Control Panel -->
+            <div class="process-panel disabled" id="processPanel">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <div style="font-weight:bold;">Alvo: <span id="processTarget"
+                            style="color:var(--accent-color); font-weight:normal;">Nenhum</span></div>
+                    <div>
+                        <input type="radio" name="mode" id="encryptRadio" checked> <label
+                            for="encryptRadio">Criptografar</label>
+                        <input type="radio" name="mode" id="decryptRadio"> <label
+                            for="decryptRadio">Descriptografar</label>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:10px;">
+                    <input type="password" id="processPwd" placeholder="Senha da Criptografia (Obrigatório)"
+                        style="flex:2">
+                    <button id="startProcessBtn" style="flex:1">EXECUTAR</button>
+                </div>
+
+                <div class="progress-container" id="progressBarContainer">
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" id="progressBarFill"></div>
+                    </div>
+                    <div style="text-align:right;">
+                        <button id="pauseProcessBtn" class="secondary"
+                            style="padding:2px 8px; font-size:0.8rem;">Pausar</button>
+                        <button id="resumeProcessBtn" class="secondary"
+                            style="padding:2px 8px; font-size:0.8rem;">Retomar</button>
+                        <button id="cancelProcessBtn" class="danger"
+                            style="padding:2px 8px; font-size:0.8rem;">Cancelar</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs -->
+            <div class="logs-panel" id="logPanel">
+                <div class="log-entry">Pronto.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="qrModal" class="modal">
+        <div class="modal-content">
+            <h3>Configurar 2FA</h3>
+            <p>Escaneie o QR Code:</p>
+            <img id="qrImage" style="width:150px; height:150px; background:white; padding:5px;">
+            <p style="font-size:0.8rem; margin:5px 0;">Segredo: <span id="secretCode"
+                    style="font-family:monospace;"></span> <button id="copySecretBtn" class="secondary"
+                    style="padding:2px 5px; font-size:0.7rem; margin-left:5px;">Copiar</button></p>
+            <input type="text" id="qrCodeInput" placeholder="Código 6 dígitos"
+                style="margin:10px 0; text-align:center;">
+            <div style="display:flex; gap:10px;">
+                <button id="confirm2faBtn" style="flex:1">Confirmar</button>
+                <button id="closeModalBtn" class="secondary" style="flex:1">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+
+</html>

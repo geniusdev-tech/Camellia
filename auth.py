@@ -85,13 +85,22 @@ class AuthPollingThread(QThread):
                 break
 
             time.sleep(self.interval)
-            token_response = requests.post(token_endpoint, data=token_params)
-            token_data = token_response.json()
+            try:
+                token_response = requests.post(token_endpoint, data=token_params, timeout=10)
+                token_data = token_response.json()
+            except requests.RequestException as e:
+                # Network-level error (timeout, connection error, DNS, etc.)
+                self.auth_failed.emit(f"Erro de rede durante autenticação: {e}")
+                break
+            except ValueError:
+                # Invalid JSON
+                self.auth_failed.emit("Resposta inválida do servidor de autenticação.")
+                break
 
             if token_response.status_code == 200:
                 self.auth_success.emit(token_data)
                 break
-            elif "error" in token_data:
+            elif isinstance(token_data, dict) and "error" in token_data:
                 error = token_data["error"]
                 if error == "authorization_pending":
                     continue
