@@ -10,11 +10,29 @@ def _get_auth_manager():
 def login():
     auth_manager = _get_auth_manager()
     data = request.json
-    success, msg = auth_manager.login(data.get('email'), data.get('password'))
+    email = data.get('email')
+    success, msg = auth_manager.login(email, data.get('password'))
     
     if success:
-        session['user_email'] = data.get('email')
-        return jsonify({'success': True, 'msg': msg})
+        session['user_email'] = email
+        
+        # Get 2FA status for frontend
+        has_2fa = False
+        import sqlite3
+        try:
+            c = sqlite3.connect(auth_manager.db_path).cursor()
+            row = c.execute("SELECT totp_secret FROM users WHERE email=?", (email,)).fetchone()
+            if row and row[0]:
+                has_2fa = True
+        except:
+            pass
+        
+        return jsonify({
+            'success': True,
+            'msg': msg,
+            'email': email,
+            'has_2fa': has_2fa
+        })
     elif msg == "AUTH_2FA_REQUIRED":
         return jsonify({'success': False, 'msg': msg, 'requires_2fa': True})
     return jsonify({'success': False, 'msg': msg})

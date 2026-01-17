@@ -195,5 +195,30 @@ def listing_devices():
     auth, _, _, dev_man = _get_managers()
     if not auth.get_session(): return jsonify({'success': False}), 401
     
-    devices = dev_man.list_devices()
-    return jsonify({'success': True, 'devices': devices})
+    try:
+        devices = dev_man.list_devices()
+        return jsonify({'success': True, 'devices': devices})
+    except Exception as e:
+        return jsonify({'success': False, 'msg': str(e)}), 500
+
+@vault_bp.route('/security/scan', methods=['POST'])
+def scan_file():
+    from core.security.integrity import IntegrityInspector
+    auth, _, _, _ = _get_managers()
+    if not auth.get_session(): return jsonify({'success': False}), 401
+    
+    data = request.json
+    raw_path = data.get('path')
+    
+    is_valid, path_obj, err_msg = PathValidator.validate(raw_path, require_exists=True)
+    
+    if not is_valid:
+        return jsonify({'success': False, 'msg': f"File error: {err_msg}"}), 400
+        
+    path = str(path_obj)
+    
+    try:
+        report = IntegrityInspector.inspect_file(path)
+        return jsonify(report)
+    except Exception as e:
+        return jsonify({'success': False, 'msg': str(e)}), 500

@@ -214,3 +214,11 @@ credentials.json
 settings.json
 history.json
 users.db
+vault/
+storage/
+keys/
+*.enc
+frontend/node_modules/
+frontend/dist/
+.env.development
+.env.production

@@ -1,179 +1,112 @@
-# Camellia Shield (Hardened Edition)
+<h1 align="center">
+  🛡️ <br>
+  Camellia Shield
+  <br>
+</h1>
 
-Camellia Shield is a secure local workspace for file encryption and management. It combines a modern web-based interface with military-grade cryptography to protect your sensitive data.
+<h4 align="center">Hardened Secure Local Workspace & Deep Integrity Inspection</h4>
+
+<p align="center">
+  <a href="#-security-architecture">Security</a> •
+  <a href="#-key-features">Features</a> •
+  <a href="#-installation">Installation</a> •
+  <a href="#-deep-integrity-inspection-dii">Deep Integrity (DII)</a>
+</p>
+
+---
+
+## 🔒 Security Architecture (Whitepaper)
+
+Camellia Shield is built on a **Zero-Trust Local Architecture**, designed to protect sensitive data even if the physical device is compromised (while at rest) or if malicious files are attempted to be introduced.
+
+### Cryptographic Core
+- **Master Key Derivation**: Uses **Argon2id** (memory-hard function) to derive the Key Encryption Key (KEK) from the user's password.
+    - *Params*: t=2, m=64MB, p=4, salt=16 bytes.
+- **Data Encryption**: **AES-256-GCM** (Galois/Counter Mode) for all file contents, ensuring confidentiality and integrity assurance (AEAD).
+- **Metadata Protection**: Filenames and directory structures are hidden. On disk, all files are renamed to random UUIDs (`f47ac10b-58cc...`), mapped only in the encrypted `vault_manifest.enc`.
+- **Key Hierarchy**:
+    1.  `User Password` + `Salt` -> `KEK` (Argon2id)
+    2.  `KEK` decrypts `Master Key` (AES-256-GCM)
+    3.  `Master Key` decrypts `File Keys` (AES-256-GCM)
+    4.  `File Keys` decrypt `File Content`
+
+### Session Security
+- **Ephemeral Keys**: Master Keys are held **only in RAM**. They are never written to disk unencrypted.
+- **Panic Wipe**: Immediate destruction of session keys from memory upon triggering the Panic Button.
+- **Auto-Lock**: Configurable inactivity timer to clear memory and require re-authentication.
+
+---
+
+## 🛡 Deep Integrity Inspection (DII)
+
+Beyond standard encryption, Camellia Shield implements a proactive **Deep Integrity Inspection** engine to detect malicious or anomalous files transferred into the secure environment.
+
+### 1. Magic Bytes Validation
+Verifies file signatures against their extensions. A file named `report.pdf` MUST start with `%PDF-`. If it starts with `MZ` (Windows Executable), it is flagged immediately as **CRITICAL**.
+
+### 2. Heuristic Entropy Analysis
+Calculates the **Shannon Entropy** of file content to detect obfuscation.
+- **Normal Text/Code**: Low entropy (< 6.0).
+- **Compressed/Media**: High entropy (> 7.5).
+- **Malicious/Packed Code**: High entropy in non-media files (e.g., a high-entropy `.js` or `.bat` file often indicates malicious packing).
+
+### 3. Cryptographic Hashing
+Generates **SHA-256** and **BLAKE2b** fingerprints for every file to verify bit-perfect integrity over time.
+
+---
 
 ## 🚀 Key Features
 
-### 🔒 Army-Grade Security
-- **Argon2id Hashing**: Protects your master password against brute-force attacks.
-- **Master Key Architecture**: Data is encrypted with a random key, which is itself encrypted by your password. This allows password changes without re-encrypting terabytes of data.
-- **Metadata Privacy**: Filenames are renamed to random UUIDs on disk. Only you see the real names when unlocked.
+- **Military-Grade Encryption**: AES-256-GCM + Argon2id.
+- **Deep Integrity Scan**: Detects malware, spoofed extensions, and corrupted files.
+- **Secure File Explorer**:
+    - **Mobile-First Design**: Responsive interface that works on generic webviews and mobile browsers.
+    - **Visual Risk Badges**: Clear indicators for Safe vs. Suspicious files.
+- **Device Management**: Secure interaction with USB/MTP devices (Whitelisting capable).
+- **Audit Logging**: Tamper-evident logging of all cryptographic operations.
 
-### �️ Safety & UX
-- **Vault System**: Files are managed via an encrypted manifest (`vault_manifest.enc`).
-- **Safe Delete**: Critical actions require typing `DELETE` to confirm, preventing accidental data loss.
-- **Session Security**: Auto-locks after 5 minutes of inactivity. Master keys are never written to disk.
+---
 
-## � Installation
+## 📦 Installation & Setup
 
 ### Requirements
-- Python 3.8+
-- Linux (GTK) / Windows / macOS
+- **OS**: Linux (Preferred), macOS, or Windows.
+- **Runtime**: Python 3.9+
+- **Browser engine**: GTK/WebKit (Linux), Cocoa/WebKit (macOS), EdgeWebView2 (Windows).
 
-### Setup
-```bash
-# Camellia Shield — Guia do Projeto
-
-Camellia Shield é uma aplicação para gerenciamento local de arquivos com criptografia forte e interface web/desktop.
-
-Visão rápida: a aplicação roda um servidor Flask que serve uma interface web (em [templates/index.html](templates/index.html)) e pode ser empacotada como app desktop via `pywebview` (ponto de entrada: `main.py`).
-
-**Principais objetivos**
-- Proteger arquivos com criptografia moderna (Argon2 para derivação de chave, AES-GCM para cifragem).
-- Ocultar metadados e nomes de arquivos no disco (UUIDs no vault).
-- Fornecer uma interface simples para encriptar/desencriptar e gerenciar um cofre local.
-
----
-
-## Funcionalidades
-- Derivação de chave com Argon2id.
-- Arquitetura com Master Key: permite troca de senha sem recriptografar todo o armazenamento.
-- Manifesto de cofre criptografado (vault manifest).
-- Proteções UX: confirmação segura para ações destrutivas, auto-lock de sessão.
-
-## Arquitetura do Projeto
-
-- `main.py` — inicializador da aplicação e da janela desktop via `pywebview`.
-- `app.py` — cria a aplicação Flask e registra blueprints em `api/`.
-- `core/` — lógica de domínio (crypto, auth, vault, tasks).
-- `api/` — endpoints (blueprints) que expõem funcionalidades para o frontend.
-- `static/` e `templates/` — frontend web (JS/CSS/HTML).
-
-Estrutura relevante:
-
-- [app.py](app.py)
-- [main.py](main.py)
-- [requirements.txt](requirements.txt)
-- [SECURITY.md](SECURITY.md)
-
----
-
-## Instalação (desenvolvimento)
-
-Requisitos: Python 3.8+ (Linux/macOS/Windows). Recomenda-se usar um virtualenv.
-
-Passos mínimos:
-
- - Para travar (fixar) dependências para builds reprodutíveis, ative seu virtualenv e execute:
+### Quick Start (Dev)
 
 ```bash
-./scripts/pin_requirements.sh
-```
-
-```bash
-# criar e ativar virtualenv
+# 1. Clone & Setup Virtual Environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# instalar dependências
+# 2. Install Dependencies
 pip install -r requirements.txt
-```
 
-Observação: `requirements.txt` contém dependências como `Flask`, `pywebview`, `cryptography` e `python-dotenv`.
+# 3. Build Frontend (React + Vite)
+cd frontend
+npm install
+npm run build
+cd ..
 
-## Variáveis de ambiente
-O projeto usa `python-dotenv`. Crie um arquivo `.env` na raiz (opcional) com:
-
-```
-FLASK_ENV=development
-PORT=5000
-# outras chaves se necessário
-```
-
-Nota: `app.py` gera `secret_key` automaticamente se não for fornecida.
-
----
-
-## Execução
-
-- Modo desktop (inicia Flask e abre janela webview):
-
-```bash
+# 4. Run Application
+# Desktop Mode (starts webview)
 python main.py
-```
 
-- Modo servidor (apenas Flask):
-
-```bash
-python -m app
-# ou
+# Headless Server Mode (for network access)
+export DESKTOP_MODE=0
 python app.py
 ```
 
- - Consulte `docs/kms_migration.md` para um playbook sobre como usar o AWS KMS e migrar material de chave local.
- - Documentação detalhada do projeto: `docs/DETAILED_DOCUMENTATION.md`.
-
-**Publicação no GitHub**
-
-Antes de publicar o repositório, siga o checklist: [docs/GITHUB_PUBLISH_CHECKLIST.md](docs/GITHUB_PUBLISH_CHECKLIST.md). Em resumo: não comite arquivos `.env`, `kms.key`, `audit.log` ou outros segredos; gere `requirements-pinned.txt`; rode `./scripts/check_secrets.sh`; instale `pre-commit` e configure hooks.
-Após a inicialização, acesse `http://127.0.0.1:5000` ou interaja pela janela criada pelo `pywebview`.
-
-### Produção
-
-Recomendações mínimas para ambiente de produção:
-
-- Defina `SECRET_KEY` como variável de ambiente forte (ex.: 32+ bytes aleatórios).
-- Execute a aplicação via WSGI (ex.: `gunicorn app:app`) por trás de um proxy reverso (nginx) que termine TLS.
-- Não exponha `debug` em produção; use `FLASK_ENV=production` e `FLASK_DEBUG=0`.
-- Use um vault/KMS para chaves de produção; não deixe chaves em arquivos de texto.
-
-Exemplo mínimo (systemd/nginx):
-
-```bash
-# export SECRET_KEY=$(openssl rand -hex 32)
-export SECRET_KEY=...
-gunicorn -w 4 -b 127.0.0.1:5000 app:app
-```
-
-## Uso (resumo)
-
-1. Na primeira execução, registre um usuário para gerar a Master Key.
-2. Faça unlock para ver os arquivos e ações disponíveis.
-3. Use a UI para encriptar/decriptar arquivos; ações críticas pedem confirmação explícita.
+### Configuration
+Camellia Shield automatically generates a secure configuration on first run.
+- **Vault Location**: `~/Documents/Camellia/Vault` (Default)
+- **Keys Location**: `~/.camellia/keys` (Protect this folder!)
 
 ---
 
-## Desenvolvimento e testes
-
-- Existem testes iniciais: `tests_2fa.py`, `tests_batch.py`, `tests_fs_hardening.py`.
-- Recomenda-se instalar `pytest` em desenvolvimento e executar:
-
-```bash
-pip install pytest
-pytest -q
-```
-
----
-
-## Segurança
-
-Leia [SECURITY.md](SECURITY.md) para práticas, limites de responsabilidade e notas sobre migrações de formatos de cofre. Há uma nota de breaking change entre versões que afeta compatibilidade de arquivos cifrados.
-
----
-
-## Contribuindo
-
-- Abra issues para bugs ou melhorias.
-- Para PRs: escreva testes e documente mudanças.
-
----
-
-## Licença
-
-Consulte o arquivo `LICENSE` na raiz do repositório.
-
----
-
-## Contato
-
-Para dúvidas e reportes de segurança, veja [SECURITY.md](SECURITY.md) ou abra uma issue.
+## ⚠️ Disclaimer
+While Camellia Shield uses state-of-the-art cryptography, security is a process.
+- **DII is not an Antivirus**: It detects anomalies, not specific virus signatures.
+- **Backup**: Always keep offline backups of your Master Key/Password. There is **NO BACKDOOR** to recover data if you lose your credentials.
