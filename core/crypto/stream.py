@@ -47,11 +47,17 @@ class StreamEngine:
         processed = 0
         
         salt = os.urandom(16)
-        if AEAD_ALGO == 'XCHACHA20' and _HAS_PYNACL:
+
+        # Use CryptoEngine AEAD abstraction
+        aead_name = self.crypto.get_aead_name()
+
+        if aead_name == 'XCHACHA20':
             # XChaCha20 uses 24-byte nonce; reserve 16 bytes prefix + 8-byte chunk idx
             nonce_prefix = os.urandom(16)
+            algo_id = 2
         else:
             nonce_prefix = os.urandom(12)
+            algo_id = 1
         
         # Step 1: Compute Blake2b hash of plaintext for integrity verification
         file_hash = hashlib.blake2b()
@@ -60,12 +66,11 @@ class StreamEngine:
                 file_hash.update(chunk)
         file_hash_digest = file_hash.digest()  # 64 bytes
         
-        # Use CryptoEngine AEAD abstraction
-        aead_name = self.crypto.get_aead_name()
-        
         with open(input_path, 'rb') as fin, open(output_path, 'wb') as fout:
             # Write Header with integrity hash
-            fout.write(MAGIC)
+            # V3 Header: MAGIC(4) + ALGO_ID(1) + SALT(16) + NONCE_PREFIX(var) + HASH(64)
+            fout.write(b'CAM3')
+            fout.write(struct.pack('B', algo_id))
             fout.write(salt)
             fout.write(nonce_prefix)
             fout.write(file_hash_digest)  # Blake2b hash for verification
@@ -76,14 +81,14 @@ class StreamEngine:
                 if not chunk:
                     break
                 
-                if aead_name == 'XCHACHA20' and _HAS_PYNACL:
+                if aead_name == 'XCHACHA20':
                     effective_nonce_prefix = nonce_prefix[:16]
                     nonce = effective_nonce_prefix + struct.pack('>Q', chunk_idx)
-                    ciphertext = self.crypto.aead_encrypt(key, nonce, chunk, None)
                 else:
                     effective_nonce_prefix = nonce_prefix[:8]
                     nonce = effective_nonce_prefix + struct.pack('>I', chunk_idx)
-                    ciphertext = self.crypto.aead_encrypt(key, nonce, chunk, None)
+
+                ciphertext = self.crypto.aead_encrypt(key, nonce, chunk, None, algo=aead_name)
                 
                 # Write Chunk Size (4 bytes) + Ciphertext
                 fout.write(struct.pack('>I', len(ciphertext)))
@@ -98,7 +103,7 @@ class StreamEngine:
         """
         Decrypts a file encrypted with encrypt_stream.
         Verifies Blake2b integrity hash after decryption.
-        Supports backward compatibility with CAM1 (AES-128) format.
+        Supports backward compatibility with CAM2 and CAM1.
         """
         # Validate key size for AES-256
         if len(key) != 32:
@@ -112,32 +117,38 @@ class StreamEngine:
             magic = fin.read(4)
             
             # Check format version
+            is_v3 = (magic == b'CAM3')
             is_v2 = (magic == b'CAM2')
             is_v1_legacy = (magic == b'CAM1')
             
-            if not is_v2 and not is_v1_legacy:
-                raise ValueError(f"Invalid File Format. Expected CAM2 or CAM1, got {magic}")
+            if not (is_v3 or is_v2 or is_v1_legacy):
+                raise ValueError(f"Invalid File Format. Expected CAM3, CAM2 or CAM1, got {magic}")
             
-            salt = fin.read(16)
-            if AEAD_ALGO == 'XCHACHA20' and _HAS_PYNACL:
-                nonce_prefix = fin.read(16)
+            if is_v3:
+                algo_id = struct.unpack('B', fin.read(1))[0]
+                aead_name = 'XCHACHA20' if algo_id == 2 else 'AESGCM'
+                salt = fin.read(16)
+                nonce_prefix_len = 16 if algo_id == 2 else 12
+                nonce_prefix = fin.read(nonce_prefix_len)
             else:
-                nonce_prefix = fin.read(12)
-            
-            # V2 has Blake2b hash, V1 doesn't
+                # V2/V1 Legacy - fallback to environment (buggy but preserved)
+                aead_name = self.crypto.get_aead_name()
+                salt = fin.read(16)
+                nonce_prefix_len = 16 if (aead_name == 'XCHACHA20') else 12
+                nonce_prefix = fin.read(nonce_prefix_len)
+
+            # V2/V3 has Blake2b hash, V1 doesn't
             expected_hash = None
-            if is_v2:
+            if is_v3 or is_v2:
                 expected_hash = fin.read(HASH_SIZE)  # 64 bytes
             
-            if AEAD_ALGO == 'XCHACHA20' and _HAS_PYNACL:
+            if aead_name == 'XCHACHA20':
                 effective_nonce_prefix = nonce_prefix[:16]
             else:
                 effective_nonce_prefix = nonce_prefix[:8]
             
-            aead_name = self.crypto.get_aead_name()
-            
-            # For V2, compute hash while decrypting
-            computed_hash = hashlib.blake2b() if is_v2 else None
+            # For V2/V3, compute hash while decrypting
+            computed_hash = hashlib.blake2b() if (is_v3 or is_v2) else None
             
             chunk_idx = 0
             while True:
@@ -151,18 +162,16 @@ class StreamEngine:
                 
                 if len(ciphertext) != chunk_len:
                     raise ValueError("Truncated ciphertext - file may be corrupted")
-                if aead_name == 'XCHACHA20' and _HAS_PYNACL:
+
+                if aead_name == 'XCHACHA20':
                     nonce = effective_nonce_prefix + struct.pack('>Q', chunk_idx)
-                    try:
-                        plaintext = self.crypto.aead_decrypt(key, nonce, ciphertext, None)
-                    except Exception as err:
-                        raise ValueError(f"Decryption failed - invalid key or corrupted data: {err}")
                 else:
                     nonce = effective_nonce_prefix + struct.pack('>I', chunk_idx)
-                    try:
-                        plaintext = self.crypto.aead_decrypt(key, nonce, ciphertext, None)
-                    except Exception as err:
-                        raise ValueError(f"Decryption failed - invalid key or corrupted data: {err}")
+
+                try:
+                    plaintext = self.crypto.aead_decrypt(key, nonce, ciphertext, None, algo=aead_name)
+                except Exception as err:
+                    raise ValueError(f"Decryption failed - invalid key or corrupted data: {err}")
                 
                 fout.write(plaintext)
                 

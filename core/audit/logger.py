@@ -13,7 +13,7 @@ Compliant with:
 import os
 import json
 import hashlib
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, Any, Optional
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
@@ -113,7 +113,7 @@ class AuditLogger:
         """Create new audit log file with metadata header"""
         header = {
             "version": "1.0",
-            "created_at": datetime.utcnow().isoformat() + "Z",
+            "created_at": datetime.now(UTC).isoformat().replace('+00:00', 'Z'),
             "public_key": self._get_public_key_hex(),
             "description": "Camellia Shield Audit Log - Cryptographically Signed"
         }
@@ -170,7 +170,7 @@ class AuditLogger:
             severity: Log severity (DEBUG, INFO, WARNING, ERROR, CRITICAL)
             ip_address: IP address of the client (if applicable)
         """
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(UTC).isoformat().replace('+00:00', 'Z')
         
         # Build log entry
         entry = {

@@ -446,6 +446,35 @@ class VaultManager:
                 "progress_global": (processed_count / total_files) * 100
             }
 
+    def delete_item(self, path):
+        """Safely deletes a file or directory and updates manifest."""
+        self._load_manifest()
+
+        if os.path.isfile(path):
+            filename = os.path.basename(path)
+            if filename in self.manifest:
+                del self.manifest[filename]
+                self._save_manifest()
+            os.remove(path)
+        elif os.path.isdir(path):
+            # If it's a directory, we need to remove all its files from manifest
+            # Normalize path for comparison
+            target_dir = os.path.abspath(path)
+            to_delete = []
+            for uid, meta in self.manifest.items():
+                parent_abs = os.path.abspath(meta.get('parent_dir', ''))
+                if parent_abs.startswith(target_dir):
+                    to_delete.append(uid)
+
+            for uid in to_delete:
+                del self.manifest[uid]
+
+            if to_delete:
+                self._save_manifest()
+
+            shutil.rmtree(path)
+        return True, "Deleted"
+
     def decrypt_batch(self, items, recursive=False):
         """
         Decrypts a list of files (UUIDs or paths resolving to UUIDs) or directories.

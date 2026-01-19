@@ -55,22 +55,22 @@ class IntegrityInspector:
         Higher values (>7.5) indicate packed/encrypted/compressed data.
         """
         try:
-            with open(file_path, "rb") as f:
-                data = f.read()
+            freq_list = [0] * 256
+            total_size = 0
 
-            if not data:
+            with open(file_path, "rb") as f:
+                while chunk := f.read(65536):
+                    total_size += len(chunk)
+                    for b in chunk:
+                        freq_list[b] += 1
+
+            if total_size == 0:
                 return 0.0
 
-            freq_list = [0] * 256
-            for b in data:
-                freq_list[b] += 1
-
             entropy = 0.0
-            length = len(data)
-
             for count in freq_list:
                 if count > 0:
-                    prob = float(count) / length
+                    prob = float(count) / total_size
                     entropy -= prob * math.log(prob, 2)
 
             return entropy

@@ -6,7 +6,7 @@ from core.sys.fs import PathValidator
 class TestPathHardening(unittest.TestCase):
     def test_fallback_logic(self):
         # Non-existent path
-        bad_path = "/home/zeus/.thispathdoesnotexisthopefully"
+        bad_path = str(Path.home() / ".thispathdoesnotexisthopefully")
         valid, p, msg = PathValidator.validate(bad_path, require_exists=True)
         self.assertFalse(valid)
         self.assertEqual(p, Path.home().resolve())
