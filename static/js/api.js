@@ -1,13 +1,14 @@
 // API Module
 const API_ENDPOINTS = {
     login: '/api/auth/login',
+    loginMFA: '/api/auth/login/mfa',
     register: '/api/auth/register',
     status: '/api/auth/status',
     logout: '/api/auth/logout',
-    setup2FA: '/api/auth/2fa/setup',
-    verify2FA: '/api/auth/2fa/verify',
-    confirm2FA: '/api/auth/2fa/confirm',
-    disable2FA: '/api/auth/2fa/disable',
+    setupMFA: '/api/auth/mfa/setup',
+    verifyMFA: '/api/auth/mfa/verify',
+    confirmMFA: '/api/auth/mfa/confirm',
+    disableMFA: '/api/auth/mfa/disable',
     listFiles: '/api/files/list',
     fileAction: '/api/files/action',
     startProcess: '/api/process/start',

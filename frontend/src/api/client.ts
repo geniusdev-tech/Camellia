@@ -2,6 +2,7 @@ import type {
     ApiResponse,
     LoginRequest,
     LoginResponse,
+    LoginMFARequest,
     RegisterRequest,
     Verify2FARequest,
     Setup2FAResponse,
@@ -16,18 +17,28 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 
+import { useAuthStore } from '../store/authStore'
+
 // Generic fetch wrapper with error handling
 async function fetchAPI<T = any>(
     endpoint: string,
     options?: RequestInit
 ): Promise<T> {
     try {
+        const { accessToken } = useAuthStore.getState()
+
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            ...(options?.headers as Record<string, string>),
+        }
+
+        if (accessToken) {
+            headers['Authorization'] = `Bearer ${accessToken}`
+        }
+
         const response = await fetch(`${API_BASE}${endpoint}`, {
             ...options,
-            headers: {
-                'Content-Type': 'application/json',
-                ...options?.headers,
-            },
+            headers,
             credentials: 'include', // Important for session cookies
         })
 
@@ -54,6 +65,13 @@ export const authAPI = {
         })
     },
 
+    async loginMFA(data: LoginMFARequest): Promise<LoginResponse> {
+        return fetchAPI('/api/auth/login/mfa', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        })
+    },
+
     async register(data: RegisterRequest): Promise<ApiResponse> {
         return fetchAPI('/api/auth/register', {
             method: 'POST',
@@ -72,27 +90,27 @@ export const authAPI = {
     },
 
     async verify2FA(data: Verify2FARequest): Promise<ApiResponse> {
-        return fetchAPI('/api/auth/2fa/verify', {
+        return fetchAPI('/api/auth/mfa/verify', {
             method: 'POST',
             body: JSON.stringify(data),
         })
     },
 
     async setup2FA(): Promise<Setup2FAResponse> {
-        return fetchAPI('/api/auth/2fa/setup', {
+        return fetchAPI('/api/auth/mfa/setup', {
             method: 'POST',
         })
     },
 
-    async confirm2FA(secret: string, code: string): Promise<ApiResponse> {
-        return fetchAPI('/api/auth/2fa/confirm', {
+    async confirm2FA(_secret: string, code: string): Promise<ApiResponse> {
+        return fetchAPI('/api/auth/mfa/verify', {
             method: 'POST',
-            body: JSON.stringify({ secret, code }),
+            body: JSON.stringify({ code }), // Backend ignores secret, uses session
         })
     },
 
     async disable2FA(): Promise<ApiResponse> {
-        return fetchAPI('/api/auth/2fa/disable', {
+        return fetchAPI('/api/auth/mfa/disable', {
             method: 'POST',
         })
     },

@@ -62,11 +62,14 @@ class TaskManager:
             task.log(f"Started {task.action} on {len(task.target)} items")
             recursive = kwargs.get('recursive', False)
             device_id = kwargs.get('device_id', 'local')
+            user_id = kwargs.get('user_id')
+            
+            if not user_id: raise ValueError("User ID required for task")
             
             if task.action == "batch_encrypt":
-                gen = self.vault_manager.encrypt_batch(task.target, device_id=device_id, recursive=recursive)
+                gen = self.vault_manager.encrypt_batch(task.target, user_id, device_id=device_id, recursive=recursive)
             elif task.action == "batch_decrypt":
-                gen = self.vault_manager.decrypt_batch(task.target, recursive=recursive)
+                gen = self.vault_manager.decrypt_batch(task.target, user_id, recursive=recursive)
             
             for update in gen:
                 if task.cancelled:
@@ -94,6 +97,8 @@ class TaskManager:
     def _run_task(self, task, kwargs):
         try:
             task.status = "Running"
+            user_id = kwargs.get('user_id')
+            if not user_id: raise ValueError("User ID required for task")
             
             # Progress callback adapter
             def cb(curr, total, file_uuid):
@@ -105,6 +110,7 @@ class TaskManager:
                 task.log(f"Encrypting {os.path.basename(task.target)}")
                 success, res = self.vault_manager.encrypt_file(
                     task.target, 
+                    user_id,
                     progress_callback=cb,
                     device_id=kwargs.get('device_id', 'local')
                 )
@@ -122,6 +128,7 @@ class TaskManager:
                 task.log(f"Decrypting {uuid_target}")
                 success, res = self.vault_manager.decrypt_file(
                     uuid_target, 
+                    user_id,
                     progress_callback=cb
                 )
                 

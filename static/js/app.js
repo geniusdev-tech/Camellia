@@ -211,20 +211,43 @@ function updateAuthState(isAuthenticated, userData) {
 document.getElementById('loginBtn').addEventListener('click', async () => {
     const email = document.getElementById('emailInput').value;
     const pwd = document.getElementById('pwdInput').value;
-    if (!email || !pwd) return alert("Fill credentials");
+    if (!email || !pwd) return alert("Preencha as credenciais");
 
     try {
         const data = await ApiService.post(API_ENDPOINTS.login, { email, password: pwd });
         if (data.success) {
             checkAuth();
-        } else if (data.requires_2fa) {
-            const code = prompt("Enter 2FA Code:");
-            if (code) verify2FA(code);
+        } else if (data.requires_mfa) {
+            // Store user_id for the second step
+            const userId = data.user_id;
+            const code = prompt("Digite o código MFA do seu app autenticador:");
+            if (code) {
+                await performMfaLogin(code, userId);
+            }
         } else {
             alert(data.msg);
         }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error(e);
+        alert("Erro no login: " + e.message);
+    }
 });
+
+async function performMfaLogin(code, userId) {
+    try {
+        const data = await ApiService.post(API_ENDPOINTS.loginMFA, {
+            code: code,
+            user_id: userId
+        });
+        if (data.success) {
+            checkAuth();
+        } else {
+            alert(data.msg || "Falha no MFA");
+        }
+    } catch (e) {
+        alert("Erro no MFA: " + e.message);
+    }
+}
 
 document.getElementById('registerBtn').addEventListener('click', async () => {
     const email = document.getElementById('emailInput').value;
@@ -240,9 +263,10 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
     checkAuth();
 });
 
-async function verify2FA(code) {
-    const data = await ApiService.post(API_ENDPOINTS.verify2FA, { code });
+async function verifyMFA(code) {
+    const data = await ApiService.post(API_ENDPOINTS.verifyMFA, { code });
     if (data.success) {
+        alert("MFA Configurado com sucesso!");
         checkAuth();
     } else {
         alert(data.msg);

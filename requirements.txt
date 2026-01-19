@@ -11,3 +11,7 @@ flask-seasurf
 Flask-Limiter
 pynacl
 boto3
+sqlalchemy
+pyjwt
+argon2-cffi
+pillow

@@ -7,7 +7,7 @@ import { authAPI } from '../api/client'
 import { useAuthStore } from '../store/authStore'
 
 export default function SettingsPage() {
-    const { user, setUser } = useAuthStore()
+    const { user, setUser, accessToken } = useAuthStore()
     const [show2FASetup, setShow2FASetup] = useState(false)
     const [qrCode, setQrCode] = useState('')
     const [secret, setSecret] = useState('')
@@ -43,8 +43,8 @@ export default function SettingsPage() {
         try {
             const response = await authAPI.confirm2FA(secret, verifyCode)
             if (response.success) {
-                if (user) {
-                    setUser({ ...user, has_2fa: true })
+                if (user && accessToken) {
+                    setUser({ ...user, has_2fa: true }, accessToken)
                 }
                 setShow2FASetup(false)
                 alert('2FA ativado com sucesso!')
@@ -68,8 +68,8 @@ export default function SettingsPage() {
         try {
             const response = await authAPI.disable2FA()
             if (response.success) {
-                if (user) {
-                    setUser({ ...user, has_2fa: false })
+                if (user && accessToken) {
+                    setUser({ ...user, has_2fa: false }, accessToken)
                 }
                 alert('2FA desativado')
             }

@@ -15,17 +15,21 @@ MANIFEST_FILENAME = "vault_manifest.enc"
 MAX_MANIFEST_BACKUPS = 5  # Keep 5 backup versions
 
 class VaultManager:
-    def __init__(self, root_path, auth_manager, kms_provider=None):
+    def __init__(self, root_path, auth_manager=None, kms_provider=None):
         self.root_path = root_path
-        self.auth_manager = auth_manager
+        self.auth_manager = auth_manager # Legacy auth manager for audit logs if needed
         self.crypto_engine = CryptoEngine()
         self.stream_engine = StreamEngine()
         self.kms = kms_provider
         self.manifest = {}
         
-    def _get_keys(self):
-        mk = self.auth_manager.get_master_key()
-        if not mk: raise PermissionError("Vault Locked or Session Expired")
+    def _get_keys(self, user_id):
+        from core.iam.session import key_manager
+        mk = key_manager.get_key(user_id)
+        
+        if not mk: 
+            # If auth_manager generic (old) is present, try fallback? No, we are cutting over.
+            raise PermissionError("Vault Locked or Session Expired")
         
         # Derive keys
         manifest_key = self.crypto_engine.derive_subkey(mk, b"manifest_encryption")
@@ -91,8 +95,8 @@ class VaultManager:
         except Exception:
             return False
 
-    def _load_manifest(self):
-        keys = self._get_keys()
+    def _load_manifest(self, user_id):
+        keys = self._get_keys(user_id)
         manifest_path = os.path.join(self.root_path, MANIFEST_FILENAME)
         
         if not os.path.exists(manifest_path):
@@ -122,8 +126,8 @@ class VaultManager:
         except Exception:
             self.manifest = {}
 
-    def _save_manifest(self):
-        keys = self._get_keys()
+    def _save_manifest(self, user_id):
+        keys = self._get_keys(user_id)
         manifest_path = os.path.join(self.root_path, MANIFEST_FILENAME)
         
         data = json.dumps(self.manifest).encode()
@@ -180,10 +184,10 @@ class VaultManager:
                 severity="INFO"
             )
 
-    def encrypt_file(self, file_path, progress_callback=None, device_id="local"):
+    def encrypt_file(self, file_path, user_id, progress_callback=None, device_id="local"):
         """Encrypts a file using StreamEngine (AES-GCM)."""
-        self._load_manifest()
-        keys = self._get_keys()
+        self._load_manifest(user_id)
+        keys = self._get_keys(user_id)
         if not os.path.exists(file_path): return False, "File not found"
         
         file_uuid = str(uuid.uuid4())
@@ -235,7 +239,7 @@ class VaultManager:
                 "method": method_name
             })
             self.manifest[file_uuid] = meta
-            self._save_manifest()
+            self._save_manifest(user_id)
             
             # Delete Original
             os.remove(file_path)
@@ -272,9 +276,9 @@ class VaultManager:
             
             return False, str(e)
 
-    def decrypt_file(self, file_uuid, progress_callback=None):
-        self._load_manifest()
-        keys = self._get_keys()
+    def decrypt_file(self, file_uuid, user_id, progress_callback=None):
+        self._load_manifest(user_id)
+        keys = self._get_keys(user_id)
         
         if file_uuid not in self.manifest:
             return False, "File ID not found in manifest"
@@ -326,7 +330,7 @@ class VaultManager:
             # Cleanup
             os.remove(encrypted_path)
             del self.manifest[file_uuid]
-            self._save_manifest()
+            self._save_manifest(user_id)
             
             # Audit log: successful decryption
             session = self.auth_manager.get_session()
@@ -360,8 +364,8 @@ class VaultManager:
 
             return False, f"Decryption Failed: {repr(e)}\n{tb}"
 
-    def list_files(self, directory):
-        self._load_manifest()
+    def list_files(self, directory, user_id):
+        self._load_manifest(user_id)
         items = []
         uuid_map = {uid: m for uid, m in self.manifest.items() if m["parent_dir"] == directory}
         
@@ -409,7 +413,7 @@ class VaultManager:
                 
         return items
 
-    def encrypt_batch(self, items, device_id="local", recursive=False):
+    def encrypt_batch(self, items, user_id, device_id="local", recursive=False):
         """
         Encrypts a list of files or directories.
         Returns a generator of progress/status updates.
@@ -436,7 +440,7 @@ class VaultManager:
                 yield {"status": "skipped", "file": file_path, "msg": "Already Encrypted"}
                 continue
                 
-            success, res = self.encrypt_file(file_path, device_id=device_id)
+            success, res = self.encrypt_file(file_path, user_id, device_id=device_id)
             processed_count += 1
             
             yield {
@@ -446,15 +450,15 @@ class VaultManager:
                 "progress_global": (processed_count / total_files) * 100
             }
 
-    def delete_item(self, path):
+    def delete_item(self, path, user_id):
         """Safely deletes a file or directory and updates manifest."""
-        self._load_manifest()
+        self._load_manifest(user_id)
 
         if os.path.isfile(path):
             filename = os.path.basename(path)
             if filename in self.manifest:
                 del self.manifest[filename]
-                self._save_manifest()
+                self._save_manifest(user_id)
             os.remove(path)
         elif os.path.isdir(path):
             # If it's a directory, we need to remove all its files from manifest
@@ -470,12 +474,12 @@ class VaultManager:
                 del self.manifest[uid]
 
             if to_delete:
-                self._save_manifest()
+                self._save_manifest(user_id)
 
             shutil.rmtree(path)
         return True, "Deleted"
 
-    def decrypt_batch(self, items, recursive=False):
+    def decrypt_batch(self, items, user_id, recursive=False):
         """
         Decrypts a list of files (UUIDs or paths resolving to UUIDs) or directories.
         Returns a generator of progress/status updates.
@@ -509,7 +513,7 @@ class VaultManager:
         processed_count = 0
         
         for file_uuid in queue:
-            success, res = self.decrypt_file(file_uuid)
+            success, res = self.decrypt_file(file_uuid, user_id)
             processed_count += 1
             
             yield {

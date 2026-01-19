@@ -39,13 +39,13 @@ export default function LoginPage() {
             } else {
                 const response = await authAPI.login({ email, password })
 
-                if (response.requires_2fa) {
-                    setRequires2FA(true, email)
-                } else if (response.success && response.email) {
+                if (response.requires_mfa || response.requires_2fa) {
+                    setRequires2FA(true, email, response.user_id)
+                } else if (response.success && response.email && response.access_token) {
                     setUser({
                         email: response.email,
                         has_2fa: response.has_2fa || false,
-                    })
+                    }, response.access_token)
                     navigate('/')
                 } else {
                     setError(response.msg || response.message || 'Credenciais inválidas')
@@ -64,18 +64,23 @@ export default function LoginPage() {
         setIsLoading(true)
 
         try {
-            const response = await authAPI.verify2FA({ code: twoFACode })
+            // Using loginMFA because this is the Login flow
+            if (!tempCredentials?.userId) {
+                throw new Error("Sessão inválida. Faça login novamente.")
+            }
 
-            if (response.success && tempCredentials) {
-                // Get status to get user info
-                const statusResponse = await authAPI.getStatus()
-                if (statusResponse.email) {
-                    setUser({
-                        email: statusResponse.email,
-                        has_2fa: statusResponse.has_2fa || false,
-                    })
-                    navigate('/')
-                }
+            const response = await authAPI.loginMFA({
+                code: twoFACode,
+                user_id: tempCredentials.userId
+            })
+
+            if (response.success && response.access_token) {
+                // Get status to get user info if needed, or use response
+                setUser({
+                    email: response.email || tempCredentials.email,
+                    has_2fa: true,
+                }, response.access_token)
+                navigate('/')
             } else {
                 setError(response.msg || 'Código 2FA inválido')
             }
