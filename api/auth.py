@@ -34,6 +34,7 @@ def login():
             'has_2fa': has_2fa
         })
     elif msg == "AUTH_2FA_REQUIRED":
+        session['pending_email'] = email
         return jsonify({'success': False, 'msg': msg, 'requires_2fa': True})
     return jsonify({'success': False, 'msg': msg})
 
@@ -48,8 +49,13 @@ def register():
 def verify_2fa():
     auth_manager = _get_auth_manager()
     data = request.json
-    success, msg = auth_manager.verify_2fa(data.get('code'))
+    email = session.get('pending_email')
+    if not email:
+        return jsonify({'success': False, 'msg': 'Session expired or invalid'}), 401
+
+    success, msg = auth_manager.verify_2fa(email, data.get('code'))
     if success:
+        session.pop('pending_email', None)
         session['user_email'] = auth_manager.get_session()['email']
         return jsonify({'success': True, 'msg': msg})
     return jsonify({'success': False, 'msg': msg})
@@ -122,6 +128,9 @@ def logout():
     auth_manager = _get_auth_manager()
     auth_manager.logout()
     session.clear()
+    # Also clean up pending logins for this email if possible?
+    # Manager doesn't have a specific way to clean pending logins on logout,
+    # but they will expire anyway.
     return jsonify({'success': True})
 
 def _get_conn_safe(manager):
