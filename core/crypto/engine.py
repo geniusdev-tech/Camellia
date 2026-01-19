@@ -119,18 +119,20 @@ class CryptoEngine:
             return 'XCHACHA20'
         return 'AESGCM'
 
-    def aead_encrypt(self, key: bytes, nonce: bytes, plaintext: bytes, aad: bytes | None = None) -> bytes:
+    def aead_encrypt(self, key: bytes, nonce: bytes, plaintext: bytes, aad: bytes | None = None, algo: str | None = None) -> bytes:
         """Encrypt using the selected AEAD."""
-        if self.get_aead_name() == 'XCHACHA20':
+        target_algo = algo or self.get_aead_name()
+        if target_algo == 'XCHACHA20':
             # PyNaCl bindings expect bytes key and nonce (24 bytes)
             return crypto_aead_xchacha20poly1305_ietf_encrypt(plaintext, aad or b'', nonce, key)
         else:
             aesgcm = AESGCM(key)
             return aesgcm.encrypt(nonce, plaintext, aad)
 
-    def aead_decrypt(self, key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes | None = None) -> bytes:
+    def aead_decrypt(self, key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes | None = None, algo: str | None = None) -> bytes:
         """Decrypt using the selected AEAD."""
-        if self.get_aead_name() == 'XCHACHA20':
+        target_algo = algo or self.get_aead_name()
+        if target_algo == 'XCHACHA20':
             return crypto_aead_xchacha20poly1305_ietf_decrypt(ciphertext, aad or b'', nonce, key)
         else:
             aesgcm = AESGCM(key)

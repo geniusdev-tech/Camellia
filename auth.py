@@ -84,7 +84,6 @@ class AuthPollingThread(QThread):
                 self.auth_failed.emit("Tempo de autenticação esgotado. Tente novamente.")
                 break
 
-            time.sleep(self.interval)
             try:
                 token_response = requests.post(token_endpoint, data=token_params, timeout=10)
                 token_data = token_response.json()
@@ -103,9 +102,11 @@ class AuthPollingThread(QThread):
             elif isinstance(token_data, dict) and "error" in token_data:
                 error = token_data["error"]
                 if error == "authorization_pending":
+                    time.sleep(self.interval)
                     continue
                 elif error == "slow_down":
-                    self.interval += 1
+                    self.interval += 5
+                    time.sleep(self.interval)
                     continue
                 else:
                     self.auth_failed.emit(f"Erro na autenticação: {error}")

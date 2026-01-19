@@ -24,16 +24,25 @@ def show_message_box(parent, title, text, icon=QMessageBox.Information):
 def secure_delete(path, passes=3):
     """
     Overwrites the file with random data before deleting it (Shredding).
+    Processes in chunks to handle large files safely.
     """
     if not os.path.exists(path): return
     
-    length = os.path.getsize(path)
+    file_size = os.path.getsize(path)
+    chunk_size = 65536
     
-    with open(path, "br+") as f:
-        for _ in range(passes):
-            f.seek(0)
-            f.write(secrets.token_bytes(length))
-            f.flush()
-            os.fsync(f.fileno())
+    try:
+        with open(path, "br+") as f:
+            for _ in range(passes):
+                f.seek(0)
+                remaining = file_size
+                while remaining > 0:
+                    current_chunk = min(remaining, chunk_size)
+                    f.write(secrets.token_bytes(current_chunk))
+                    remaining -= current_chunk
+                f.flush()
+                os.fsync(f.fileno())
+    except (OSError, IOError):
+        pass # Fallback to normal delete if overwrite fails (e.g. read-only fs)
             
     os.remove(path)

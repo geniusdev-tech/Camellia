@@ -81,14 +81,9 @@ def file_action():
     
     try:
         if action == 'delete':
-            # Add safety check here or in VaultManager?
-            # Basic os remove for now, manager might need delete_file method to handle manifest cleanup
-            # TODO: Implement vault_manager.delete_file for safe manifest update
-            if os.path.isfile(path):
-                os.remove(path)
-            else:
-                shutil.rmtree(path)
-            return jsonify({'success': True, 'msg': "Deleted"})
+            _, vault, _, _ = _get_managers()
+            success, msg = vault.delete_item(path)
+            return jsonify({'success': success, 'msg': msg})
             
         elif action == 'rename':
              new_name = data.get('new_name')

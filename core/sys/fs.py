@@ -11,7 +11,10 @@ class PathValidator:
     """
     
     # Systems paths to strictly block
-    BLOCKED_PREFIXES = ['/proc', '/sys', '/dev', '/run', '/boot']
+    BLOCKED_PREFIXES = [
+        '/proc', '/sys', '/dev', '/run', '/boot', '/etc', '/var', '/usr',
+        '/bin', '/sbin', '/lib', '/lib64', '/root'
+    ]
 
     @staticmethod
     def get_fallback() -> pathlib.Path:
@@ -54,6 +57,22 @@ class PathValidator:
         for block in PathValidator.BLOCKED_PREFIXES:
             if s_path.startswith(block):
                 return False, fallback, f"Access denied to system path: {block}"
+
+        # Security Check: Enforce Allowed Roots (Home or External Media)
+        allowed_roots = [str(fallback), '/media', '/run/media', '/mnt', '/tmp', os.getcwd()]
+        # Also allow /tmp and current working directory
+        is_allowed = False
+        for root in allowed_roots:
+            try:
+                # Check if target_path is within this root
+                target_path.relative_to(root)
+                is_allowed = True
+                break
+            except ValueError:
+                continue
+
+        if not is_allowed:
+             return False, fallback, "Access denied: Path outside of allowed user or media areas"
 
         # Existence Check
         if require_exists:
