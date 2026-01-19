@@ -142,10 +142,12 @@ class AuthManager:
 
         # Success - Pending 2FA or Done
         if totp_secret:
-             self._temp_login_state = {
-                 "email": email,
+             if not hasattr(self, '_pending_logins'):
+                 self._pending_logins = {}
+             self._pending_logins[email] = {
                  "master_key": master_key,
-                 "ip_address": ip_address
+                 "ip_address": ip_address,
+                 "expiry": time.time() + 300 # 5 minutes expiry
              }
              return False, "AUTH_2FA_REQUIRED"
         
@@ -165,21 +167,24 @@ class AuthManager:
         
         return True, "Login successful"
 
-    def verify_2fa(self, code):
-        if not hasattr(self, '_temp_login_state'):
+    def verify_2fa(self, email, code):
+        if not hasattr(self, '_pending_logins') or email not in self._pending_logins:
             return False, "No pending login"
             
-        email = self._temp_login_state["email"]
+        pending = self._pending_logins[email]
+        if time.time() > pending["expiry"]:
+            del self._pending_logins[email]
+            return False, "Login expired"
         
         conn = sqlite3.connect(self.db_path)
         row = conn.execute("SELECT totp_secret FROM users WHERE email=?", (email,)).fetchone()
         conn.close()
         
-        if row and row[0]: # Ensure secret exists
+        if row and row[0]:
             totp = pyotp.TOTP(row[0])
             if totp.verify(code):
-                 self._create_session(email, self._temp_login_state["master_key"])
-                 del self._temp_login_state
+                 self._create_session(email, pending["master_key"])
+                 del self._pending_logins[email]
                  return True, "2FA Verified"
         
         return False, "Invalid Code"
