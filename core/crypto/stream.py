@@ -175,8 +175,8 @@ class StreamEngine:
                 
                 fout.write(plaintext)
                 
-                # Update hash for V2
-                if is_v2:
+                # Update hash for integrity verification
+                if is_v3 or is_v2:
                     computed_hash.update(plaintext)
                 
                 chunk_idx += 1
@@ -184,8 +184,8 @@ class StreamEngine:
                 if progress_callback:
                     progress_callback(processed, file_size)
             
-            # Verify integrity hash for V2
-            if is_v2:
+            # Verify integrity hash for V3/V2
+            if is_v3 or is_v2:
                 if computed_hash.digest() != expected_hash:
                     # Delete output file on integrity failure
                     fout.close()
