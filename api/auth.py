@@ -80,10 +80,12 @@ def login():
 def login_mfa():
     data = request.json
     code = data.get('code')
-    user_id = session.get('pre_auth_user_id') or data.get('user_id')
+    # SECURITY: ONLY retrieve user_id from session to ensure 1st factor (password) was passed in this session.
+    # Accepting it from request body (data.get('user_id')) allows MFA brute-force/probing for arbitrary users.
+    user_id = session.get('pre_auth_user_id')
     
     if not user_id:
-        return jsonify({'success': False, 'msg': 'Sessão inválida. Faça login novamente.'}), 401
+        return jsonify({'success': False, 'msg': 'Sessão inválida ou expirada. Faça login novamente.'}), 401
         
     db = SessionLocal()
     try:
@@ -91,7 +93,8 @@ def login_mfa():
         controller = AuthController(db)
         
         if not user or not user.mfa_secret_enc:
-             return jsonify({'success': False, 'msg': 'Erro na validação MFA'}), 400
+             # Use a generic error message to avoid leaking user/MFA status
+             return jsonify({'success': False, 'msg': 'Erro na validação MFA'}), 401
              
         # In a real scenario we decrypt mfa_secret logic here if it was encrypted with master key.
         # But for now assuming `mfa_secret_enc` stores the secret (or we add logic to decrypt).
@@ -114,6 +117,7 @@ def login_mfa():
             else:
                 # Critical edge case: Key expired or lost?
                 # Without password we can't recover it.
+                # Returning 401 and generic msg
                 return jsonify({'success': False, 'msg': 'Sessão expirada. Faça login novamente.'}), 401
             
             access_token = controller.create_access_token(user.id, [user.role.name] if user.role else [])
@@ -127,7 +131,9 @@ def login_mfa():
                 'role': user.role.name if user.role else None
             })
         else:
-            return jsonify({'success': False, 'msg': 'Código MFA inválido'}), 401
+            # SECURITY: Generic error message for both invalid code AND expired pre_auth key
+            # to prevent information leakage about which part of the authentication failed.
+            return jsonify({'success': False, 'msg': 'Falha na autenticação MFA'}), 401
     finally:
         db.close()
 
