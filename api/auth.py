@@ -80,7 +80,10 @@ def login():
 def login_mfa():
     data = request.json
     code = data.get('code')
-    user_id = session.get('pre_auth_user_id') or data.get('user_id')
+    # SECURITY: Strictly retrieve user_id from session to ensure the first factor (password)
+    # was completed in the same session. Accepting user_id from the request body allows
+    # MFA probing and session bypass.
+    user_id = session.get('pre_auth_user_id')
     
     if not user_id:
         return jsonify({'success': False, 'msg': 'Sessão inválida. Faça login novamente.'}), 401
