@@ -3,13 +3,41 @@ import os
 import json
 import unittest
 import time
+import pyotp
 
 # Add root
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app import create_app
 from core.iam.db import SessionLocal, init_db
-from core.iam.models import User
+from core.iam.models import User, Role
+from core.iam.auth import AuthController
+from core.crypto.engine import CryptoEngine
+
+def setup_test_user(db):
+    """Ensure admin user exists with correct password and no MFA."""
+    role = db.query(Role).filter_by(name='owner').first()
+    if not role:
+        role = Role(name='owner', permissions=['*'])
+        db.add(role); db.commit(); db.refresh(role)
+
+    user = db.query(User).filter_by(username='admin@rodrigo.mail').first()
+    controller = AuthController(db)
+    if not user:
+        user = User(username='admin@rodrigo.mail', role_id=role.id)
+        db.add(user)
+
+    user.password_hash = controller.hash_password('Nses@100')
+    user.is_active = True
+    user.mfa_secret_enc = None
+
+    if not user.wrapped_key:
+        crypto = CryptoEngine()
+        mk = crypto.generate_master_key()
+        user.wrapped_key = json.dumps(crypto.wrap_master_key(mk, 'Nses@100'))
+
+    db.commit()
+    return user
 
 class TestPhase1(unittest.TestCase):
     def setUp(self):
@@ -17,6 +45,7 @@ class TestPhase1(unittest.TestCase):
         self.app.config['TESTING'] = True
         self.client = self.app.test_client()
         self.db = SessionLocal()
+        setup_test_user(self.db)
         
     def tearDown(self):
         self.db.close()
@@ -25,96 +54,49 @@ class TestPhase1(unittest.TestCase):
         print("\n--- Testing Full Auth & Vault Flow ---")
         
         # 1. Login (Initial)
-        resp = self.client.post('/api/auth/login', json={
-            'email': 'admin@rodrigo.mail',
-            'password': 'Nses@100'
-        })
-        print(f"Login Response: {resp.json}")
-        self.assertEqual(resp.status_code, 200)
+        resp = self.client.post('/api/auth/login', json={'email': 'admin@rodrigo.mail', 'password': 'Nses@100'})
         self.assertTrue(resp.json['success'])
-        
         token = resp.json['access_token']
         headers = {'Authorization': f'Bearer {token}'}
         
         # 2. Setup MFA
-        print("Setting up MFA...")
         resp = self.client.post('/api/auth/mfa/setup', headers=headers)
-        self.assertEqual(resp.status_code, 200)
         secret = resp.json['secret']
-        print(f"MFA Secret: {secret}")
         
         # 3. Verify MFA
-        import pyotp
         totp = pyotp.TOTP(secret)
-        code = totp.now()
-        
-        resp = self.client.post('/api/auth/mfa/verify', headers=headers, json={'code': code})
+        resp = self.client.post('/api/auth/mfa/verify', headers=headers, json={'code': totp.now()})
         self.assertEqual(resp.status_code, 200)
-        print("MFA Verified.")
         
         # 4. Login with MFA
-        print("Logging in again with MFA flow...")
-        resp = self.client.post('/api/auth/login', json={
-            'email': 'admin@rodrigo.mail',
-            'password': 'Nses@100'
-        })
+        resp = self.client.post('/api/auth/login', json={'email': 'admin@rodrigo.mail', 'password': 'Nses@100'})
         self.assertTrue(resp.json['requires_mfa'])
         
-        # Provide Code
-        code = totp.now()
-        # We need to maintain session cookie for 'pre_auth_user_id'
-        with self.client.session_transaction() as sess:
-             sess['pre_auth_user_id'] = resp.json['user_id']
-             
-        resp = self.client.post('/api/auth/login/mfa', json={
-            'code': code,
-            'user_id': resp.json['user_id']
-        })
-        # Note: test_client cookie handling might need explicit jar usage if we rely on session.
-        # But 'login/mfa' checks 'user_id' in body as fallback in my code.
-        
+        # 5. Provide Code (User ID comes from session)
+        resp = self.client.post('/api/auth/login/mfa', json={'code': totp.now()})
         self.assertEqual(resp.status_code, 200)
-        self.assertTrue(resp.json['success'])
         token = resp.json['access_token']
         headers = {'Authorization': f'Bearer {token}'}
-        print("Login with MFA Successful.")
         
-        # 5. Vault Operation (List Files)
-        print("Listing Vault Files...")
-        resp = self.client.post('/api/files/list', headers=headers, json={'path': '/home/zeus/Documentos'}) # Use a real path
-        if resp.status_code == 404:
-             # Folder might not exist, try '.'
-             resp = self.client.post('/api/files/list', headers=headers, json={'path': '.'})
-        
-        print(f"List Files Response: {resp.status_code} - {resp.json.get('msg', 'OK')}")
-        self.assertEqual(resp.status_code, 200)
+        # 6. Vault Operation (List Files)
+        resp = self.client.post('/api/files/list', headers=headers, json={'path': '.'})
         self.assertTrue(resp.json['success'])
         
-        # 6. Encrypt Test File
+        # 7. Encrypt Test File
         test_file = 'test_encrypt.txt'
-        with open(test_file, 'w') as f:
-            f.write("Secret Content")
+        with open(test_file, 'w') as f: f.write("Secret Content")
             
-        print("Encrypting File...")
-        resp = self.client.post('/api/process/start', headers=headers, json={
-            'path': os.path.abspath(test_file),
-            'encrypt': True
-        })
-        print(f"Encrypt Task: {resp.json}")
-        self.assertEqual(resp.status_code, 200)
+        resp = self.client.post('/api/process/start', headers=headers, json={'path': os.path.abspath(test_file), 'encrypt': True})
         task_id = resp.json['task_id']
         
         # Wait for task
-        for _ in range(10):
+        for _ in range(5):
             time.sleep(1)
-            status_resp = self.client.get(f'/api/process/status/{task_id}', headers=headers)
-            status = status_resp.json['status']
-            print(f"Task Status: {status}")
-            if status in ['Completed', 'Error']:
-                break
+            status = self.client.get(f'/api/process/status/{task_id}', headers=headers).json['status']
+            if status in ['Completed', 'Error']: break
         
         self.assertEqual(status, 'Completed')
-        print("Encryption Verified.")
+        if os.path.exists(test_file): os.remove(test_file)
 
 if __name__ == '__main__':
     unittest.main()

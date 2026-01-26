@@ -22,7 +22,7 @@ def login():
             return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
             
         if not user.is_active:
-            return jsonify({'success': False, 'msg': 'Conta desativada'}), 403
+            return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
             
         # 2. Unwrap Master Key
         master_key = None
@@ -40,13 +40,10 @@ def login():
 
         # Check MFA
         if user.mfa_secret_enc:
-            # Store MK temporarily in session or key_manager with "pending" flag?
-            # Better: key_manager keyed by a temp pre-auth ID.
+            # Security: Store user_id in session only. Do not rely on client-provided user_id for MFA.
             session['pre_auth_user_id'] = user.id
             
-            # Store MK in KeyManager temporarily? Or just keep in memory? 
-            # If we don't store it, we can't get it after MFA without asking password again.
-            # So we store it in KeyManager but maybe with a short TTL.
+            # Store Master Key in memory temporarily (TTL 5m) until MFA is completed.
             if master_key:
                 from core.iam.session import key_manager
                 key_manager.store_key(f"pre_auth_{user.id}", master_key, ttl=300)
@@ -54,8 +51,7 @@ def login():
             return jsonify({
                 'success': False,
                 'msg': 'MFA Required',
-                'requires_mfa': True,
-                'user_id': user.id 
+                'requires_mfa': True
             })
             
         # Success - Generate Tokens
@@ -80,7 +76,8 @@ def login():
 def login_mfa():
     data = request.json
     code = data.get('code')
-    user_id = session.get('pre_auth_user_id') or data.get('user_id')
+    # Use session only to prevent MFA probing/bypass
+    user_id = session.get('pre_auth_user_id')
     
     if not user_id:
         return jsonify({'success': False, 'msg': 'Sessão inválida. Faça login novamente.'}), 401
