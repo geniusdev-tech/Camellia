@@ -67,11 +67,9 @@ class TestPhase1(unittest.TestCase):
              sess['pre_auth_user_id'] = resp.json['user_id']
              
         resp = self.client.post('/api/auth/login/mfa', json={
-            'code': code,
-            'user_id': resp.json['user_id']
+            'code': code
         })
-        # Note: test_client cookie handling might need explicit jar usage if we rely on session.
-        # But 'login/mfa' checks 'user_id' in body as fallback in my code.
+        # Note: test_client maintains session cookies by default in this context.
         
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json['success'])
