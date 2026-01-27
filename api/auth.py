@@ -18,11 +18,9 @@ def login():
         controller = AuthController(db)
         
         # 1. Verify Password
-        if not user or not controller.verify_password(user.password_hash, password):
+        if not user or not controller.verify_password(user.password_hash, password) or not user.is_active:
+            # Security: Generic message to prevent account discovery or state probing
             return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
-            
-        if not user.is_active:
-            return jsonify({'success': False, 'msg': 'Conta desativada'}), 403
             
         # 2. Unwrap Master Key
         master_key = None
@@ -78,12 +76,20 @@ def login():
 
 @auth_bp.route('/login/mfa', methods=['POST'])
 def login_mfa():
+    """
+    Second step of authentication. Strictly retrieves user_id from session
+    to ensure the first factor was completed in the same session.
+    """
     data = request.json
     code = data.get('code')
-    user_id = session.get('pre_auth_user_id') or data.get('user_id')
+    user_id = session.get('pre_auth_user_id')
+
+    # Security: Use generic error messages for all MFA failures to prevent
+    # state probing (MFA Oracles) and account discovery.
+    generic_error = 'Erro na validação MFA. Sessão inválida ou código incorreto.'
     
     if not user_id:
-        return jsonify({'success': False, 'msg': 'Sessão inválida. Faça login novamente.'}), 401
+        return jsonify({'success': False, 'msg': generic_error}), 401
         
     db = SessionLocal()
     try:
@@ -91,30 +97,20 @@ def login_mfa():
         controller = AuthController(db)
         
         if not user or not user.mfa_secret_enc:
-             return jsonify({'success': False, 'msg': 'Erro na validação MFA'}), 400
+            return jsonify({'success': False, 'msg': generic_error}), 401
              
-        # In a real scenario we decrypt mfa_secret logic here if it was encrypted with master key.
-        # But for now assuming `mfa_secret_enc` stores the secret (or we add logic to decrypt).
-        # Our `models.py` says `mfa_secret_enc`. 
-        # CAUTION: If we implemented Master Key encryption for this secret, we need the Master Key.
-        # For Phase 1, we might store it "at rest encrypted" but need logic to unwrap.
-        # Given `auth.py` implementation of `verify_totp_token` expects the raw secret.
-        # Let's assume for this MVP step `mfa_secret_enc` holds the secret, or we need to manage encryption.
-        # Current logic: `controller.verify_totp_token(user.mfa_secret_enc, code)`
-        
         if controller.verify_totp_token(user.mfa_secret_enc, code):
-            session.pop('pre_auth_user_id', None)
-            
             # Promote Master Key from Pending to Active
             from core.iam.session import key_manager
             pending_key = key_manager.get_key(f"pre_auth_{user.id}")
+
             if pending_key:
+                session.pop('pre_auth_user_id', None)
                 key_manager.store_key(user.id, pending_key)
                 key_manager.clear_key(f"pre_auth_{user.id}")
             else:
-                # Critical edge case: Key expired or lost?
-                # Without password we can't recover it.
-                return jsonify({'success': False, 'msg': 'Sessão expirada. Faça login novamente.'}), 401
+                # Key missing usually means session timeout or Factor 1 was bypassed
+                return jsonify({'success': False, 'msg': generic_error}), 401
             
             access_token = controller.create_access_token(user.id, [user.role.name] if user.role else [])
             refresh_token = controller.create_refresh_token(user.id)
@@ -127,7 +123,7 @@ def login_mfa():
                 'role': user.role.name if user.role else None
             })
         else:
-            return jsonify({'success': False, 'msg': 'Código MFA inválido'}), 401
+            return jsonify({'success': False, 'msg': generic_error}), 401
     finally:
         db.close()
 
@@ -175,7 +171,7 @@ def verify_mfa_setup():
             session.pop('mfa_pending_secret', None)
             return jsonify({'success': True, 'msg': 'MFA ativado com sucesso'})
         else:
-             return jsonify({'success': False, 'msg': 'Código inválido'}), 400
+            return jsonify({'success': False, 'msg': 'Código inválido'}), 400
     finally:
         db.close()
 

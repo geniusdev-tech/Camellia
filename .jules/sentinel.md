@@ -1,0 +1,4 @@
+## 2025-05-14 - MFA Bypass and Oracle via Request Body user_id
+**Vulnerability:** The `/api/auth/login/mfa` endpoint accepted `user_id` from the request body as a fallback to the session. This allowed attackers to probe MFA codes for any user without knowing their password. Additionally, non-generic error messages created an MFA oracle, allowing an attacker to distinguish between a wrong code and a right code for a user without a valid session.
+**Learning:** Accepting critical identity parameters like `user_id` in the request body during multi-step authentication flows can bypass session-based security controls. Generic error messages are essential for all authentication steps to prevent state discovery.
+**Prevention:** Strictly retrieve `user_id` from the session (e.g., `pre_auth_user_id`) during the second factor of authentication. Use generic "Validation failed" messages for all MFA failure modes.
