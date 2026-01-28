@@ -17,12 +17,10 @@ export interface LoginResponse extends ApiResponse {
     requires_mfa?: boolean
     email?: string
     has_2fa?: boolean
-    user_id?: number | string
 }
 
 export interface LoginMFARequest {
     code: string
-    user_id: number | string
 }
 
 export interface RegisterRequest {

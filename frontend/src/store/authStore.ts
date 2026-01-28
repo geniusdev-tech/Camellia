@@ -7,11 +7,11 @@ interface AuthState {
     isAuthenticated: boolean
     requires2FA: boolean
     accessToken: string | null
-    tempCredentials: { email: string; userId?: number | string } | null
+    tempCredentials: { email: string } | null
 
     // Actions
     setUser: (user: User, accessToken: string) => void
-    setRequires2FA: (required: boolean, email?: string, userId?: number | string) => void
+    setRequires2FA: (required: boolean, email?: string) => void
     logout: () => void
     clearTempCredentials: () => void
 }
@@ -34,10 +34,10 @@ export const useAuthStore = create<AuthState>()(
                     tempCredentials: null,
                 }),
 
-            setRequires2FA: (required, email, userId) =>
+            setRequires2FA: (required, email) =>
                 set({
                     requires2FA: required,
-                    tempCredentials: email ? { email, userId } : null,
+                    tempCredentials: email ? { email } : null,
                 }),
 
             logout: () =>

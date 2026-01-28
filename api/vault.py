@@ -53,7 +53,8 @@ def list_files():
     except PermissionError:
         return jsonify({'success': False, 'msg': "Vault Locked or Session Expired"}), 401
     except Exception as e:
-        return jsonify({'success': False, 'msg': f"System Error: {str(e)}"}), 500
+        print(f"[Vault Error] {str(e)}")
+        return jsonify({'success': False, 'msg': "System Error: Operation failed"}), 500
 
 @vault_bp.route('/files/action', methods=['POST'])
 @require_auth
@@ -93,7 +94,8 @@ def file_action():
              return jsonify({'success': True, 'msg': "Renamed"})
              
     except Exception as e:
-        return jsonify({'success': False, 'msg': str(e)}), 500
+        print(f"[Vault Action Error] {str(e)}")
+        return jsonify({'success': False, 'msg': "Operation failed"}), 500
 
 @vault_bp.route('/process/start', methods=['POST'])
 @require_auth
@@ -181,7 +183,8 @@ def listing_devices():
         devices = dev_man.list_devices()
         return jsonify({'success': True, 'devices': devices})
     except Exception as e:
-        return jsonify({'success': False, 'msg': str(e)}), 500
+        print(f"[Device List Error] {str(e)}")
+        return jsonify({'success': False, 'msg': "Failed to list devices"}), 500
 
 @vault_bp.route('/security/scan', methods=['POST'])
 @require_auth
@@ -205,4 +208,5 @@ def scan_file():
         report = IntegrityInspector.inspect_file(path)
         return jsonify(report)
     except Exception as e:
-        return jsonify({'success': False, 'msg': str(e)}), 500
+        print(f"[Scan Error] {str(e)}")
+        return jsonify({'success': False, 'msg': "Security scan failed"}), 500
