@@ -40,7 +40,7 @@ export default function LoginPage() {
                 const response = await authAPI.login({ email, password })
 
                 if (response.requires_mfa || response.requires_2fa) {
-                    setRequires2FA(true, email, response.user_id)
+                    setRequires2FA(true, email)
                 } else if (response.success && response.email && response.access_token) {
                     setUser({
                         email: response.email,
@@ -65,19 +65,14 @@ export default function LoginPage() {
 
         try {
             // Using loginMFA because this is the Login flow
-            if (!tempCredentials?.userId) {
-                throw new Error("Sessão inválida. Faça login novamente.")
-            }
-
             const response = await authAPI.loginMFA({
-                code: twoFACode,
-                user_id: tempCredentials.userId
+                code: twoFACode
             })
 
             if (response.success && response.access_token) {
                 // Get status to get user info if needed, or use response
                 setUser({
-                    email: response.email || tempCredentials.email,
+                    email: response.email || tempCredentials?.email || '',
                     has_2fa: true,
                 }, response.access_token)
                 navigate('/')

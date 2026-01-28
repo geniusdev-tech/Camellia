@@ -16,8 +16,12 @@ class FakeAuth:
         return {"email": "tester@example.com"}
 
 
+from core.iam.session import key_manager
+
 def test_kms_envelope_roundtrip(tmp_path):
+    user_id = "test_user_kms"
     mk = os.urandom(32)
+    key_manager.store_key(user_id, mk)
     auth = FakeAuth(mk)
 
     # Initialize file KMS
@@ -33,11 +37,11 @@ def test_kms_envelope_roundtrip(tmp_path):
     data = b'hello world - kms test'
     sample.write_bytes(data)
 
-    ok, fid = vm.encrypt_file(str(sample))
+    ok, fid = vm.encrypt_file(str(sample), user_id)
     assert ok is True
 
     # Decrypt
-    ok2, restored = vm.decrypt_file(fid)
+    ok2, restored = vm.decrypt_file(fid, user_id)
     assert ok2 is True
     restored_path = tmp_path / restored
     assert restored_path.read_bytes() == data

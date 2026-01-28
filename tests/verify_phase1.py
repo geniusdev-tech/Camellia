@@ -62,13 +62,9 @@ class TestPhase1(unittest.TestCase):
         
         # Provide Code
         code = totp.now()
-        # We need to maintain session cookie for 'pre_auth_user_id'
-        with self.client.session_transaction() as sess:
-             sess['pre_auth_user_id'] = resp.json['user_id']
-             
+
         resp = self.client.post('/api/auth/login/mfa', json={
-            'code': code,
-            'user_id': resp.json['user_id']
+            'code': code
         })
         # Note: test_client cookie handling might need explicit jar usage if we rely on session.
         # But 'login/mfa' checks 'user_id' in body as fallback in my code.
