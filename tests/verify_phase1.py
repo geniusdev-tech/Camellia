@@ -60,6 +60,12 @@ class TestPhase1(unittest.TestCase):
         })
         self.assertTrue(resp.json['requires_mfa'])
         
+        # Security Test: Attempt MFA login WITHOUT session (MFA Oracle prevention)
+        with self.app.test_client() as other_client:
+            resp_oracle = other_client.post('/api/auth/login/mfa', json={'code': totp.now(), 'user_id': resp.json['user_id']})
+            self.assertEqual(resp_oracle.status_code, 401)
+            self.assertEqual(resp_oracle.json['msg'], 'Sessão inválida. Faça login novamente.')
+
         # Provide Code
         code = totp.now()
         # We need to maintain session cookie for 'pre_auth_user_id'
@@ -67,8 +73,7 @@ class TestPhase1(unittest.TestCase):
              sess['pre_auth_user_id'] = resp.json['user_id']
              
         resp = self.client.post('/api/auth/login/mfa', json={
-            'code': code,
-            'user_id': resp.json['user_id']
+            'code': code
         })
         # Note: test_client cookie handling might need explicit jar usage if we rely on session.
         # But 'login/mfa' checks 'user_id' in body as fallback in my code.

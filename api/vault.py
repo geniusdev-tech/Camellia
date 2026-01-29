@@ -1,10 +1,12 @@
 from flask import Blueprint, request, jsonify, g
 import os
 import shutil
+import logging
 from core.sys.fs import PathValidator
 from core.iam.rbac import require_auth, require_permission
 
 vault_bp = Blueprint('vault', __name__, url_prefix='/api')
+logger = logging.getLogger(__name__)
 
 ROOT_DIR = str(PathValidator.get_fallback())
 
@@ -53,7 +55,8 @@ def list_files():
     except PermissionError:
         return jsonify({'success': False, 'msg': "Vault Locked or Session Expired"}), 401
     except Exception as e:
-        return jsonify({'success': False, 'msg': f"System Error: {str(e)}"}), 500
+        logger.exception("Error in list_files")
+        return jsonify({'success': False, 'msg': "System Error: Operation failed"}), 500
 
 @vault_bp.route('/files/action', methods=['POST'])
 @require_auth
@@ -93,7 +96,8 @@ def file_action():
              return jsonify({'success': True, 'msg': "Renamed"})
              
     except Exception as e:
-        return jsonify({'success': False, 'msg': str(e)}), 500
+        logger.exception("Error in file_action")
+        return jsonify({'success': False, 'msg': "System Error: Operation failed"}), 500
 
 @vault_bp.route('/process/start', methods=['POST'])
 @require_auth
@@ -181,7 +185,8 @@ def listing_devices():
         devices = dev_man.list_devices()
         return jsonify({'success': True, 'devices': devices})
     except Exception as e:
-        return jsonify({'success': False, 'msg': str(e)}), 500
+        logger.exception("Error in listing_devices")
+        return jsonify({'success': False, 'msg': "System Error: Operation failed"}), 500
 
 @vault_bp.route('/security/scan', methods=['POST'])
 @require_auth
@@ -205,4 +210,5 @@ def scan_file():
         report = IntegrityInspector.inspect_file(path)
         return jsonify(report)
     except Exception as e:
-        return jsonify({'success': False, 'msg': str(e)}), 500
+        logger.exception("Error in scan_file")
+        return jsonify({'success': False, 'msg': "System Error: Operation failed"}), 500
