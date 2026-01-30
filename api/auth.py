@@ -22,7 +22,8 @@ def login():
             return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
             
         if not user.is_active:
-            return jsonify({'success': False, 'msg': 'Conta desativada'}), 403
+            # [Security] Use generic message to prevent account discovery
+            return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
             
         # 2. Unwrap Master Key
         master_key = None
@@ -34,9 +35,9 @@ def login():
                 wrapped_data = json.loads(user.wrapped_key)
                 master_key = crypto.unwrap_master_key(wrapped_data, password)
             except Exception as e:
-                # Log error
+                # [Security] Log detailed error but return generic message
                 print(f"Key Unwrap Failed: {e}")
-                return jsonify({'success': False, 'msg': 'Erro crítico: Falha ao descriptografar Chave Mestra'}), 500
+                return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
 
         # Check MFA
         if user.mfa_secret_enc:
@@ -80,10 +81,13 @@ def login():
 def login_mfa():
     data = request.json
     code = data.get('code')
-    user_id = session.get('pre_auth_user_id') or data.get('user_id')
+
+    # [Security] Strictly retrieve user_id from session to ensure 1st factor completion
+    # and prevent MFA probing for arbitrary users.
+    user_id = session.get('pre_auth_user_id')
     
     if not user_id:
-        return jsonify({'success': False, 'msg': 'Sessão inválida. Faça login novamente.'}), 401
+        return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
         
     db = SessionLocal()
     try:
@@ -91,7 +95,8 @@ def login_mfa():
         controller = AuthController(db)
         
         if not user or not user.mfa_secret_enc:
-             return jsonify({'success': False, 'msg': 'Erro na validação MFA'}), 400
+             # [Security] Generic message
+             return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
              
         # In a real scenario we decrypt mfa_secret logic here if it was encrypted with master key.
         # But for now assuming `mfa_secret_enc` stores the secret (or we add logic to decrypt).
@@ -112,9 +117,8 @@ def login_mfa():
                 key_manager.store_key(user.id, pending_key)
                 key_manager.clear_key(f"pre_auth_{user.id}")
             else:
-                # Critical edge case: Key expired or lost?
-                # Without password we can't recover it.
-                return jsonify({'success': False, 'msg': 'Sessão expirada. Faça login novamente.'}), 401
+                # [Security] Generic message for session/key timeout
+                return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
             
             access_token = controller.create_access_token(user.id, [user.role.name] if user.role else [])
             refresh_token = controller.create_refresh_token(user.id)
@@ -127,7 +131,8 @@ def login_mfa():
                 'role': user.role.name if user.role else None
             })
         else:
-            return jsonify({'success': False, 'msg': 'Código MFA inválido'}), 401
+            # [Security] Generic message
+            return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
     finally:
         db.close()
 
