@@ -2,7 +2,7 @@ import os
 import tempfile
 from core.vault.manager import VaultManager
 from core.audit.logger import init_audit_logger
-
+from core.iam.session import key_manager
 
 class FakeAuth:
     def __init__(self, mk):
@@ -16,7 +16,11 @@ class FakeAuth:
 
 
 def test_manifest_save_and_load(tmp_path):
+    user_id = "test_user"
     mk = os.urandom(32)
+    # Store key in key_manager for VaultManager to find it
+    key_manager.store_key(user_id, mk)
+
     auth = FakeAuth(mk)
     # initialize audit logger to avoid RuntimeError during _save_manifest
     audit_log = os.path.join(str(tmp_path), 'audit.log')
@@ -33,7 +37,7 @@ def test_manifest_save_and_load(tmp_path):
         }
     }
 
-    vm._save_manifest()
+    vm._save_manifest(user_id)
 
     manifest_path = os.path.join(str(tmp_path), "vault_manifest.enc")
     assert os.path.exists(manifest_path)
@@ -41,6 +45,6 @@ def test_manifest_save_and_load(tmp_path):
 
     # Load into a fresh manager instance
     vm2 = VaultManager(str(tmp_path), auth)
-    vm2._load_manifest()
+    vm2._load_manifest(user_id)
     assert isinstance(vm2.manifest, dict)
     assert "file1" in vm2.manifest
