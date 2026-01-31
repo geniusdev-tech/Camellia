@@ -80,7 +80,8 @@ def login():
 def login_mfa():
     data = request.json
     code = data.get('code')
-    user_id = session.get('pre_auth_user_id') or data.get('user_id')
+    # SECURITY: Strictly use user_id from session to prevent MFA probing/brute-force
+    user_id = session.get('pre_auth_user_id')
     
     if not user_id:
         return jsonify({'success': False, 'msg': 'Sessão inválida. Faça login novamente.'}), 401
@@ -91,7 +92,7 @@ def login_mfa():
         controller = AuthController(db)
         
         if not user or not user.mfa_secret_enc:
-             return jsonify({'success': False, 'msg': 'Erro na validação MFA'}), 400
+             return jsonify({'success': False, 'msg': 'Falha na autenticação MFA'}), 401
              
         # In a real scenario we decrypt mfa_secret logic here if it was encrypted with master key.
         # But for now assuming `mfa_secret_enc` stores the secret (or we add logic to decrypt).
@@ -103,31 +104,27 @@ def login_mfa():
         # Current logic: `controller.verify_totp_token(user.mfa_secret_enc, code)`
         
         if controller.verify_totp_token(user.mfa_secret_enc, code):
-            session.pop('pre_auth_user_id', None)
-            
             # Promote Master Key from Pending to Active
             from core.iam.session import key_manager
             pending_key = key_manager.get_key(f"pre_auth_{user.id}")
+
             if pending_key:
+                session.pop('pre_auth_user_id', None)
                 key_manager.store_key(user.id, pending_key)
                 key_manager.clear_key(f"pre_auth_{user.id}")
-            else:
-                # Critical edge case: Key expired or lost?
-                # Without password we can't recover it.
-                return jsonify({'success': False, 'msg': 'Sessão expirada. Faça login novamente.'}), 401
-            
-            access_token = controller.create_access_token(user.id, [user.role.name] if user.role else [])
-            refresh_token = controller.create_refresh_token(user.id)
-            
-            return jsonify({
-                'success': True,
-                'access_token': access_token,
-                'refresh_token': refresh_token,
-                'email': user.username,
-                'role': user.role.name if user.role else None
-            })
-        else:
-            return jsonify({'success': False, 'msg': 'Código MFA inválido'}), 401
+
+                access_token = controller.create_access_token(user.id, [user.role.name] if user.role else [])
+                refresh_token = controller.create_refresh_token(user.id)
+
+                return jsonify({
+                    'success': True,
+                    'access_token': access_token,
+                    'refresh_token': refresh_token,
+                    'email': user.username,
+                    'role': user.role.name if user.role else None
+                })
+
+        return jsonify({'success': False, 'msg': 'Falha na autenticação MFA'}), 401
     finally:
         db.close()
 

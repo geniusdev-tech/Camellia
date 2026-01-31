@@ -484,7 +484,7 @@ class VaultManager:
         Decrypts a list of files (UUIDs or paths resolving to UUIDs) or directories.
         Returns a generator of progress/status updates.
         """
-        self._load_manifest()
+        self._load_manifest(user_id)
         queue = []
         
         # 1. Expand Directories / Resolve Paths to UUIDs
