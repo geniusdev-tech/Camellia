@@ -78,11 +78,18 @@ def login():
 
 @auth_bp.route('/login/mfa', methods=['POST'])
 def login_mfa():
+    """
+    Validates MFA code. Strictly enforces session binding by retrieving
+    user_id from the session ('pre_auth_user_id') only.
+    """
     data = request.json
     code = data.get('code')
-    user_id = session.get('pre_auth_user_id') or data.get('user_id')
+
+    # SECURITY: Strictly retrieve user_id from session to prevent probing attacks.
+    user_id = session.get('pre_auth_user_id')
     
     if not user_id:
+        # Generic error message to prevent session enumeration/probing
         return jsonify({'success': False, 'msg': 'Sessão inválida. Faça login novamente.'}), 401
         
     db = SessionLocal()
