@@ -80,10 +80,11 @@ def login():
 def login_mfa():
     data = request.json
     code = data.get('code')
-    user_id = session.get('pre_auth_user_id') or data.get('user_id')
+    # Security: Strictly use user_id from session to prevent MFA probing
+    user_id = session.get('pre_auth_user_id')
     
     if not user_id:
-        return jsonify({'success': False, 'msg': 'Sessão inválida. Faça login novamente.'}), 401
+        return jsonify({'success': False, 'msg': 'Sessão ou credenciais inválidas'}), 401
         
     db = SessionLocal()
     try:
@@ -91,30 +92,20 @@ def login_mfa():
         controller = AuthController(db)
         
         if not user or not user.mfa_secret_enc:
-             return jsonify({'success': False, 'msg': 'Erro na validação MFA'}), 400
+             return jsonify({'success': False, 'msg': 'Sessão ou credenciais inválidas'}), 401
              
-        # In a real scenario we decrypt mfa_secret logic here if it was encrypted with master key.
-        # But for now assuming `mfa_secret_enc` stores the secret (or we add logic to decrypt).
-        # Our `models.py` says `mfa_secret_enc`. 
-        # CAUTION: If we implemented Master Key encryption for this secret, we need the Master Key.
-        # For Phase 1, we might store it "at rest encrypted" but need logic to unwrap.
-        # Given `auth.py` implementation of `verify_totp_token` expects the raw secret.
-        # Let's assume for this MVP step `mfa_secret_enc` holds the secret, or we need to manage encryption.
-        # Current logic: `controller.verify_totp_token(user.mfa_secret_enc, code)`
-        
+        # Promote Master Key from Pending to Active
+        # Security: Check session binding first before verifying TOTP to block probing
+        from core.iam.session import key_manager
+        pending_key = key_manager.get_key(f"pre_auth_{user.id}")
+        if not pending_key:
+            return jsonify({'success': False, 'msg': 'Sessão ou credenciais inválidas'}), 401
+
         if controller.verify_totp_token(user.mfa_secret_enc, code):
             session.pop('pre_auth_user_id', None)
             
-            # Promote Master Key from Pending to Active
-            from core.iam.session import key_manager
-            pending_key = key_manager.get_key(f"pre_auth_{user.id}")
-            if pending_key:
-                key_manager.store_key(user.id, pending_key)
-                key_manager.clear_key(f"pre_auth_{user.id}")
-            else:
-                # Critical edge case: Key expired or lost?
-                # Without password we can't recover it.
-                return jsonify({'success': False, 'msg': 'Sessão expirada. Faça login novamente.'}), 401
+            key_manager.store_key(user.id, pending_key)
+            key_manager.clear_key(f"pre_auth_{user.id}")
             
             access_token = controller.create_access_token(user.id, [user.role.name] if user.role else [])
             refresh_token = controller.create_refresh_token(user.id)
@@ -127,7 +118,8 @@ def login_mfa():
                 'role': user.role.name if user.role else None
             })
         else:
-            return jsonify({'success': False, 'msg': 'Código MFA inválido'}), 401
+            # Generic error message to prevent token discovery
+            return jsonify({'success': False, 'msg': 'Sessão ou credenciais inválidas'}), 401
     finally:
         db.close()
 
