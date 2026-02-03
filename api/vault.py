@@ -80,17 +80,23 @@ def file_action():
             return jsonify({'success': success, 'msg': msg})
             
         elif action == 'rename':
-             new_name = data.get('new_name')
-             if not new_name or '..' in new_name or '/' in new_name or '\\' in new_name:
-                 return jsonify({'success': False, 'msg': "Invalid filename"}), 400
-                 
-             new_path = os.path.join(os.path.dirname(path), new_name)
-             
-             if os.path.exists(new_path):
-                  return jsonify({'success': False, 'msg': "Destination already exists"}), 400
+            new_name = data.get('new_name')
+            if not new_name:
+                return jsonify({'success': False, 'msg': "Invalid filename"}), 400
 
-             os.rename(path, new_path)
-             return jsonify({'success': True, 'msg': "Renamed"})
+            # Use PathValidator to ensure destination is also safe and within allowed boundaries
+            new_path_raw = os.path.join(os.path.dirname(path), new_name)
+            is_valid, path_obj, err_msg = PathValidator.validate(new_path_raw, require_exists=False)
+
+            if not is_valid:
+                return jsonify({'success': False, 'msg': f"Invalid destination: {err_msg}"}), 400
+
+            new_path = str(path_obj)
+            if os.path.exists(new_path):
+                return jsonify({'success': False, 'msg': "Destination already exists"}), 400
+
+            os.rename(path, new_path)
+            return jsonify({'success': True, 'msg': "Renamed"})
              
     except Exception as e:
         return jsonify({'success': False, 'msg': str(e)}), 500
