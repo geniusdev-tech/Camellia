@@ -1,0 +1,4 @@
+## 2025-01-31 - MFA Probing and Information Leakage in Auth Endpoints
+**Vulnerability:** The `/api/auth/login/mfa` endpoint allowed `user_id` to be passed in the request body, bypassing session binding. Additionally, authentication endpoints returned different error messages for non-existent users, deactivated users, and invalid MFA codes.
+**Learning:** Combining multiple authentication implementations (legacy vs newer IAM) can lead to inconsistent security enforcement and testing gaps. In this case, the newer IAM system had robust `VaultManager` logic but the API endpoints and corresponding tests were not fully aligned on session-bound security.
+**Prevention:** Strictly use session-stored identifiers for multi-step authentication flows. Use generic error messages and consistent status codes (e.g., 401 Unauthorized) for all authentication failures to prevent account enumeration and state discovery.
