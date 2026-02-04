@@ -18,11 +18,9 @@ def login():
         controller = AuthController(db)
         
         # 1. Verify Password
-        if not user or not controller.verify_password(user.password_hash, password):
+        if not user or not controller.verify_password(user.password_hash, password) or not user.is_active:
+            # Generic error message to prevent account/status discovery
             return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
-            
-        if not user.is_active:
-            return jsonify({'success': False, 'msg': 'Conta desativada'}), 403
             
         # 2. Unwrap Master Key
         master_key = None
@@ -80,28 +78,22 @@ def login():
 def login_mfa():
     data = request.json
     code = data.get('code')
-    user_id = session.get('pre_auth_user_id') or data.get('user_id')
+    # SECURITY: Strictly retrieve user_id from session to prevent MFA probing/brute-forcing.
+    user_id = session.get('pre_auth_user_id')
     
     if not user_id:
-        return jsonify({'success': False, 'msg': 'Sessão inválida. Faça login novamente.'}), 401
+        # Use generic message and 401 status for all authentication-related failures.
+        return jsonify({'success': False, 'msg': 'Sessão inválida ou expirada'}), 401
         
     db = SessionLocal()
     try:
         user = db.query(User).get(user_id)
         controller = AuthController(db)
         
+        # SECURITY: Use generic error message even if user or MFA config is missing.
         if not user or not user.mfa_secret_enc:
-             return jsonify({'success': False, 'msg': 'Erro na validação MFA'}), 400
+             return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
              
-        # In a real scenario we decrypt mfa_secret logic here if it was encrypted with master key.
-        # But for now assuming `mfa_secret_enc` stores the secret (or we add logic to decrypt).
-        # Our `models.py` says `mfa_secret_enc`. 
-        # CAUTION: If we implemented Master Key encryption for this secret, we need the Master Key.
-        # For Phase 1, we might store it "at rest encrypted" but need logic to unwrap.
-        # Given `auth.py` implementation of `verify_totp_token` expects the raw secret.
-        # Let's assume for this MVP step `mfa_secret_enc` holds the secret, or we need to manage encryption.
-        # Current logic: `controller.verify_totp_token(user.mfa_secret_enc, code)`
-        
         if controller.verify_totp_token(user.mfa_secret_enc, code):
             session.pop('pre_auth_user_id', None)
             
@@ -112,8 +104,7 @@ def login_mfa():
                 key_manager.store_key(user.id, pending_key)
                 key_manager.clear_key(f"pre_auth_{user.id}")
             else:
-                # Critical edge case: Key expired or lost?
-                # Without password we can't recover it.
+                # Key expired or lost during MFA step
                 return jsonify({'success': False, 'msg': 'Sessão expirada. Faça login novamente.'}), 401
             
             access_token = controller.create_access_token(user.id, [user.role.name] if user.role else [])
@@ -127,7 +118,8 @@ def login_mfa():
                 'role': user.role.name if user.role else None
             })
         else:
-            return jsonify({'success': False, 'msg': 'Código MFA inválido'}), 401
+            # SECURITY: Use generic error message for incorrect MFA codes.
+            return jsonify({'success': False, 'msg': 'Credenciais inválidas'}), 401
     finally:
         db.close()
 
