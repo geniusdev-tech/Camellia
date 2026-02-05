@@ -222,3 +222,4 @@ frontend/node_modules/
 frontend/dist/
 .env.development
 .env.production
+.audit_signing_key
