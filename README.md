@@ -21,7 +21,7 @@
 | **Backend API** | Flask 3 · Python 3.12 |
 | **Criptografia** | AES-256-GCM · XChaCha20-Poly1305 · Argon2id · Ed25519 |
 | **Autenticação** | JWT (RS256) · TOTP 2FA · RBAC |
-| **KMS** | FileKMS (dev) · AWS KMS / Vault Transit (prod) |
+| **KMS** | FileKMS (dev) · Env KMS / AWS KMS / Vault Transit (prod) |
 | **Auditoria** | Append-only log assinado Ed25519 |
 
 ---
@@ -134,6 +134,19 @@ O backend agora usa `DATABASE_URL` ou `POSTGRES_URL` automaticamente quando essa
 
 Para CORS em produção, defina `ALLOWED_ORIGIN` com uma ou mais origens separadas por vírgula.
 Sem isso, a API não responde com `Access-Control-Allow-Origin` em produção.
+
+Para a alternativa mais simples, defina:
+- `KMS_PROVIDER=env`
+- `MASTER_KEY_ENCRYPTION_KEY`
+
+Essa chave deve ser um Fernet key válido, por exemplo gerado com:
+
+```bash
+python3 - <<'PY'
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())
+PY
+```
 
 Para AWS KMS, defina `AWS_KMS_KEY_ID` e `AWS_REGION`.
 

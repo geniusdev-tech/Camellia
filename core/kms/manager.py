@@ -5,12 +5,15 @@ from typing import Any
 
 from core.crypto.engine import CryptoEngine
 from core.kms.aws_kms import AWSKMSProvider
+from core.kms.env_kms import EnvKMSProvider
 from core.kms.file_kms import FileKMS
 from core.kms.transit_kms import TransitKMSProvider
 
 
 def _default_provider_name() -> str:
     if os.getenv("VERCEL"):
+        if os.getenv("MASTER_KEY_ENCRYPTION_KEY"):
+            return "env"
         if os.getenv("AWS_KMS_KEY_ID"):
             return "aws"
         if os.getenv("VAULT_ADDR") and os.getenv("VAULT_TOKEN") and os.getenv("VAULT_TRANSIT_KEY_NAME"):
@@ -21,6 +24,9 @@ def _default_provider_name() -> str:
 
 def create_runtime_kms(default_file_path: str) -> Any:
     provider = os.getenv("KMS_PROVIDER", _default_provider_name()).lower()
+
+    if provider == "env":
+        return EnvKMSProvider(os.getenv("MASTER_KEY_ENCRYPTION_KEY"))
 
     if provider == "aws":
         key_id = os.getenv("AWS_KMS_KEY_ID")
@@ -54,7 +60,7 @@ def wrap_master_key(master_key: str, password: str, kms: Any = None) -> dict[str
 
 def unwrap_master_key(wrapped: dict[str, Any], password: str, kms: Any = None) -> str:
     wrapped_type = wrapped.get("type")
-    if wrapped_type in {"aws_kms", "AWSKMSProvider", "TransitKMSProvider"}:
+    if wrapped_type in {"aws_kms", "AWSKMSProvider", "TransitKMSProvider", "EnvKMSProvider"}:
         if not kms or not hasattr(kms, "decrypt"):
             raise RuntimeError("An external KMS provider is required to unwrap this master key")
         ciphertext = base64.b64decode(wrapped["ciphertext"])
