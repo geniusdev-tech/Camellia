@@ -66,10 +66,12 @@ def create_app() -> Flask:
 
     # ── Blueprints ────────────────────────────────────
     from api.auth import auth_bp
+    from api.projects import projects_bp
     from api.vault import vault_bp
     from api.audit import audit_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(projects_bp)
     app.register_blueprint(vault_bp)
     app.register_blueprint(audit_bp)
 
@@ -103,6 +105,7 @@ def create_app() -> Flask:
     if SeaSurf is not None and not desktop_mode and env not in ("development",):
         csrf = SeaSurf(app)
         csrf.exempt(auth_bp)
+        csrf.exempt(projects_bp)
         csrf.exempt(vault_bp)
         csrf.exempt(audit_bp)
 
@@ -143,6 +146,7 @@ def create_app() -> Flask:
             response.headers["Vary"] = "Origin"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
         return response
 
     @app.route("/api/<path:path>", methods=["OPTIONS"])

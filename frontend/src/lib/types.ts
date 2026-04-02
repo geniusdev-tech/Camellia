@@ -34,6 +34,23 @@ export interface User {
   has_2fa: boolean
 }
 
+/* ── Projects ─────────────────────────────────────── */
+export interface UploadedProject {
+  id: string
+  filename: string
+  content_type?: string
+  size_bytes: number
+  created_at: string
+}
+
+export interface ProjectListResponse extends ApiResponse {
+  projects: UploadedProject[]
+}
+
+export interface ProjectUploadResponse extends ApiResponse {
+  project?: UploadedProject
+}
+
 /* ── Vault / Files ────────────────────────────────── */
 export interface FileItem {
   name: string

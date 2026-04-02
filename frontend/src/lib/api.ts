@@ -8,7 +8,7 @@ import type {
   RegisterRequest, Verify2FARequest, Setup2FAResponse,
   ListFilesRequest, ListFilesResponse, BatchProcessRequest,
   BatchProcessResponse, ProcessStatus, ListDevicesResponse,
-  FileActionRequest,
+  FileActionRequest, ProjectListResponse, ProjectUploadResponse,
 } from './types'
 import { getApiBase } from './tauri'
 
@@ -22,8 +22,9 @@ async function fetchAPI<T = ApiResponse>(
         ?.state?.accessToken ?? ''
     : ''
 
+  const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData
   const headers: HeadersInit = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(init?.headers as Record<string, string> ?? {}),
   }
@@ -100,4 +101,18 @@ export const vaultAPI = {
 /* ── Devices ──────────────────────────────────────── */
 export const deviceAPI = {
   listDevices: () => fetchAPI<ListDevicesResponse>('/api/devices/list'),
+}
+
+/* ── Projects ─────────────────────────────────────── */
+export const projectsAPI = {
+  list: () => fetchAPI<ProjectListResponse>('/api/projects/list'),
+
+  upload: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return fetchAPI<ProjectUploadResponse>('/api/projects/upload', {
+      method: 'POST',
+      body: form,
+    })
+  },
 }

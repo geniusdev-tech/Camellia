@@ -1,5 +1,7 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import declarative_base, relationship
+from datetime import datetime, timezone
+import uuid
 
 
 Base = declarative_base()
@@ -40,3 +42,21 @@ class User(Base):
     def has_permission(self, permission: str) -> bool:
         role_name = self.role.name if self.role else "user"
         return permission in ROLE_PERMISSIONS.get(role_name, set())
+
+
+class ProjectUpload(Base):
+    __tablename__ = "project_uploads"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    filename = Column(String(255), nullable=False)
+    content_type = Column(String(255), nullable=True)
+    size_bytes = Column(Integer, nullable=False)
+    payload = Column(LargeBinary, nullable=False)
+    created_at = Column(
+        String(64),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc).isoformat(),
+    )
+
+    user = relationship("User")
