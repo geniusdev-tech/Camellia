@@ -150,7 +150,7 @@ PY
 
 Para AWS KMS, defina `AWS_KMS_KEY_ID` e `AWS_REGION`.
 
-Para Vault Transit, defina:
+- Para Vault Transit, defina:
 - `KMS_PROVIDER=transit`
 - `VAULT_ADDR`
 - `VAULT_TOKEN`
@@ -159,7 +159,17 @@ Para Vault Transit, defina:
 
 Na Vercel, o backend não cria mais `kms.key` local por padrão; com AWS KMS ou Vault Transit configurado, novas master keys passam a ser protegidas externamente.
 
-Para subir um Vault Transit com HTTPS em um VPS, use o kit em [`infra/vault/README.md`](/home/zeus/Documentos/camellia-shield/infra/vault/README.md).
+### Upload de Projetos
+
+Você pode subir arquivos `.zip` para o backend sem lidar com storage customizado.
+Basta configurar o Supabase Storage:
+
+- `SUPABASE_URL=https://<seu-projeto>.supabase.co`
+- `SUPABASE_SERVICE_KEY=<service_role_key>`
+- `SUPABASE_BUCKET=<nome_do_bucket>`
+
+O backend envia os uploads para o bucket e só guarda a referência no banco.
+No dashboard agora há um componente `Projetos` para enviar `.zip` e listar o histórico.
 
 ---
 

@@ -1,7 +1,8 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime, timezone
 import uuid
+import os
 
 
 Base = declarative_base()
@@ -52,7 +53,8 @@ class ProjectUpload(Base):
     filename = Column(String(255), nullable=False)
     content_type = Column(String(255), nullable=True)
     size_bytes = Column(Integer, nullable=False)
-    payload = Column(LargeBinary, nullable=False)
+    storage_key = Column(String(512), nullable=False)
+    bucket = Column(String(128), nullable=False, default=lambda: os.getenv("SUPABASE_BUCKET", ""))
     created_at = Column(
         String(64),
         nullable=False,

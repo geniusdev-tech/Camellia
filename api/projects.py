@@ -1,13 +1,18 @@
+import os
+import uuid
+
 from flask import Blueprint, jsonify, request, g
 
 from core.iam.db import SessionLocal
 from core.iam.models import ProjectUpload
 from core.iam.rbac import require_auth, require_permission
+from utils.supabase_storage import upload_to_supabase
 
 
 projects_bp = Blueprint("projects", __name__, url_prefix="/api/projects")
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET")
 
 
 def _serialize_project(item: ProjectUpload) -> dict:
@@ -16,6 +21,8 @@ def _serialize_project(item: ProjectUpload) -> dict:
         "filename": item.filename,
         "content_type": item.content_type,
         "size_bytes": item.size_bytes,
+        "storage_key": item.storage_key,
+        "bucket": getattr(item, "bucket", SUPABASE_BUCKET),
         "created_at": item.created_at,
     }
 
@@ -39,14 +46,26 @@ def upload_project():
     if len(payload) > MAX_UPLOAD_BYTES:
         return jsonify({"success": False, "msg": "Arquivo excede 25 MB"}), 400
 
+    if not SUPABASE_BUCKET:
+        return jsonify({"success": False, "msg": "Supabase bucket não configurado"}), 500
+
+    storage_key = f"projects/{uuid.uuid4()}-{filename}"
+
     db = SessionLocal()
     try:
+        upload_to_supabase(
+            SUPABASE_BUCKET,
+            storage_key,
+            payload,
+            file.mimetype or "application/zip",
+        )
+
         item = ProjectUpload(
             user_id=g.user_id,
             filename=filename,
             content_type=file.mimetype,
             size_bytes=len(payload),
-            payload=payload,
+            storage_key=storage_key,
         )
         db.add(item)
         db.commit()
