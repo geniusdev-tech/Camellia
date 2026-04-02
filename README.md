@@ -127,6 +127,9 @@ vercel deploy --prod \
 Na Vercel, `audit.log`, `kms.key` e os bancos SQLite padrão passam a usar `/tmp`.
 Isso permite o boot da aplicação, mas esses dados continuam efêmeros entre execuções. Para produção real, use banco externo e KMS externo.
 
+O bootstrap automático de usuário só usa credenciais padrão em desenvolvimento local.
+Em produção/serverless, defina `CAMELLIA_DEV_EMAIL` e `CAMELLIA_DEV_PASSWORD` se quiser criar um usuário inicial automaticamente.
+
 ---
 
 ## 📄 Licença

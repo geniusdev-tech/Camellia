@@ -37,8 +37,21 @@ def init_db() -> None:
             db.add(user_role)
         db.commit()
 
-        admin_email = os.getenv("CAMELLIA_DEV_EMAIL", "rodrigo@mail.com")
-        admin_password = os.getenv("CAMELLIA_DEV_PASSWORD", "Nses@100")
+        env = os.getenv("FLASK_ENV", "production").lower()
+        is_serverless = bool(os.getenv("VERCEL"))
+
+        admin_email = os.getenv("CAMELLIA_DEV_EMAIL")
+        admin_password = os.getenv("CAMELLIA_DEV_PASSWORD")
+
+        # Keep local development bootstrapping convenient, but never rely on
+        # hardcoded credentials in production/serverless runtimes.
+        if (not admin_email or not admin_password) and env == "development" and not is_serverless:
+            admin_email = "rodrigo@mail.com"
+            admin_password = "Nses@100"
+
+        if not admin_email or not admin_password:
+            return
+
         admin = db.query(User).filter_by(username=admin_email).first()
         if admin is None:
             wrapped_key = CryptoEngine().wrap_master_key(
