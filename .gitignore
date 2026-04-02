@@ -27,7 +27,7 @@ audit.log
 history.json
 users.db
 *.db
-vault/
+/vault/
 storage/
 keys/
 *.enc
@@ -61,3 +61,4 @@ Thumbs.db
 # Local tooling
 .codex
 .vercel
+infra/vault/data/

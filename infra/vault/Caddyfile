@@ -1,0 +1,14 @@
+{$DOMAIN} {
+  encode zstd gzip
+
+  reverse_proxy vault:8200
+
+  tls {$LETSENCRYPT_EMAIL}
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "no-referrer"
+  }
+}

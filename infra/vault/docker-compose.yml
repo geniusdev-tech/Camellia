@@ -1,0 +1,38 @@
+services:
+  vault:
+    image: hashicorp/vault:1.21
+    container_name: camellia-vault
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    env_file:
+      - .env
+    environment:
+      VAULT_API_ADDR: ${VAULT_API_ADDR}
+      VAULT_UI: ${VAULT_UI:-true}
+    command: vault server -config=/vault/config/vault.hcl
+    volumes:
+      - ./config:/vault/config:ro
+      - ./data:/vault/file
+    expose:
+      - "8200"
+
+  caddy:
+    image: caddy:2
+    container_name: camellia-vault-caddy
+    restart: unless-stopped
+    depends_on:
+      - vault
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
