@@ -101,7 +101,10 @@ def create_app() -> Flask:
         )
 
     if SeaSurf is not None and not desktop_mode and env not in ("development",):
-        SeaSurf(app)
+        csrf = SeaSurf(app)
+        csrf.exempt(auth_bp)
+        csrf.exempt(vault_bp)
+        csrf.exempt(audit_bp)
 
     # ── Logging ───────────────────────────────────────
     siem = os.getenv("SIEM_ENDPOINT")
