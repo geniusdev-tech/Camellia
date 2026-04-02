@@ -1,112 +1,120 @@
-<h1 align="center">
-  🛡️ <br>
-  Camellia Shield
-  <br>
-</h1>
-
-<h4 align="center">Hardened Secure Local Workspace & Deep Integrity Inspection</h4>
+<h1 align="center">🛡️ Camellia Shield</h1>
+<h4 align="center">Hardened Secure Local Workspace — AES-256-GCM · Argon2id · Ed25519</h4>
 
 <p align="center">
-  <a href="#-security-architecture">Security</a> •
-  <a href="#-key-features">Features</a> •
-  <a href="#-installation">Installation</a> •
-  <a href="#-deep-integrity-inspection-dii">Deep Integrity (DII)</a>
+  <a href="#-stack">Stack</a> •
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-build">Build</a> •
+  <a href="#-security">Security</a> •
+  <a href="#-deploy">Deploy</a>
 </p>
 
 ---
 
-## 🔒 Security Architecture (Whitepaper)
+## 🏗 Stack
 
-Camellia Shield is built on a **Zero-Trust Local Architecture**, designed to protect sensitive data even if the physical device is compromised (while at rest) or if malicious files are attempted to be introduced.
-
-### Cryptographic Core
-- **Master Key Derivation**: Uses **Argon2id** (memory-hard function) to derive the Key Encryption Key (KEK) from the user's password.
-    - *Params*: t=2, m=64MB, p=4, salt=16 bytes.
-- **Data Encryption**: **AES-256-GCM** (Galois/Counter Mode) for all file contents, ensuring confidentiality and integrity assurance (AEAD).
-- **Metadata Protection**: Filenames and directory structures are hidden. On disk, all files are renamed to random UUIDs (`f47ac10b-58cc...`), mapped only in the encrypted `vault_manifest.enc`.
-- **Key Hierarchy**:
-    1.  `User Password` + `Salt` -> `KEK` (Argon2id)
-    2.  `KEK` decrypts `Master Key` (AES-256-GCM)
-    3.  `Master Key` decrypts `File Keys` (AES-256-GCM)
-    4.  `File Keys` decrypt `File Content`
-
-### Session Security
-- **Ephemeral Keys**: Master Keys are held **only in RAM**. They are never written to disk unencrypted.
-- **Panic Wipe**: Immediate destruction of session keys from memory upon triggering the Panic Button.
-- **Auto-Lock**: Configurable inactivity timer to clear memory and require re-authentication.
+| Camada | Tecnologia |
+|--------|-----------|
+| **Desktop shell** | Tauri 2 (Rust) |
+| **Frontend** | Next.js 14 · TypeScript · Tailwind CSS · Framer Motion |
+| **Estado** | Zustand · TanStack Query |
+| **Backend API** | Flask 3 · Python 3.12 |
+| **Criptografia** | AES-256-GCM · XChaCha20-Poly1305 · Argon2id · Ed25519 |
+| **Autenticação** | JWT (RS256) · TOTP 2FA · RBAC |
+| **KMS** | FileKMS (dev) · AWS KMS (prod) |
+| **Auditoria** | Append-only log assinado Ed25519 |
 
 ---
 
-## 🛡 Deep Integrity Inspection (DII)
-
-Beyond standard encryption, Camellia Shield implements a proactive **Deep Integrity Inspection** engine to detect malicious or anomalous files transferred into the secure environment.
-
-### 1. Magic Bytes Validation
-Verifies file signatures against their extensions. A file named `report.pdf` MUST start with `%PDF-`. If it starts with `MZ` (Windows Executable), it is flagged immediately as **CRITICAL**.
-
-### 2. Heuristic Entropy Analysis
-Calculates the **Shannon Entropy** of file content to detect obfuscation.
-- **Normal Text/Code**: Low entropy (< 6.0).
-- **Compressed/Media**: High entropy (> 7.5).
-- **Malicious/Packed Code**: High entropy in non-media files (e.g., a high-entropy `.js` or `.bat` file often indicates malicious packing).
-
-### 3. Cryptographic Hashing
-Generates **SHA-256** and **BLAKE2b** fingerprints for every file to verify bit-perfect integrity over time.
-
----
-
-## 🚀 Key Features
-
-- **Military-Grade Encryption**: AES-256-GCM + Argon2id.
-- **Deep Integrity Scan**: Detects malware, spoofed extensions, and corrupted files.
-- **Secure File Explorer**:
-    - **Mobile-First Design**: Responsive interface that works on generic webviews and mobile browsers.
-    - **Visual Risk Badges**: Clear indicators for Safe vs. Suspicious files.
-- **Device Management**: Secure interaction with USB/MTP devices (Whitelisting capable).
-- **Audit Logging**: Tamper-evident logging of all cryptographic operations.
-
----
-
-## 📦 Installation & Setup
-
-### Requirements
-- **OS**: Linux (Preferred), macOS, or Windows.
-- **Runtime**: Python 3.9+
-- **Browser engine**: GTK/WebKit (Linux), Cocoa/WebKit (macOS), EdgeWebView2 (Windows).
-
-### Quick Start (Dev)
+## 🚀 Quick Start (Desenvolvimento)
 
 ```bash
-# 1. Clone & Setup Virtual Environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 2. Install Dependencies
+# 1. Clone e configure ambiente Python
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 3. Build Frontend (React + Vite)
-cd frontend
-npm install
-npm run build
-cd ..
+# 2. Configure variáveis de ambiente
+cp .env.example .env
+# Edite .env: defina SECRET_KEY
 
-# 4. Run Application
-# Desktop Mode (starts webview)
-python main.py
+# 3. Inicialise banco IAM e usuário admin
+python scripts/init_iam_db.py
 
-# Headless Server Mode (for network access)
-export DESKTOP_MODE=0
-python app.py
+# 4. Instale dependências Node
+cd frontend && npm install && cd ..
+
+# 5. Inicie Flask + Next.js lado a lado
+make dev
+# Flask: http://localhost:5000
+# Next:  http://localhost:3000
+
+# 6. Ou inicie dentro do Tauri (janela nativa)
+make dev-tauri
 ```
-
-### Configuration
-Camellia Shield automatically generates a secure configuration on first run.
-- **Vault Location**: `~/Documents/Camellia/Vault` (Default)
-- **Keys Location**: `~/.camellia/keys` (Protect this folder!)
 
 ---
 
-## ⚠️ Disclaimer
-While Camellia Shield uses state-of-the-art cryptography, security is a process.
-- **DII is not an Antivirus**: It detects anomalies, not specific virus signatures.
-- **Backup**: Always keep offline backups of your Master Key/Password. There is **NO BACKDOOR** to recover data if you lose your credentials.
+## 📦 Build
+
+### Desktop (executável nativo)
+
+```bash
+# Todas as dependências
+make install
+
+# Gerar executável backend + app Tauri para o SO atual
+make build
+
+# Targets específicos
+make build-linux    # .deb + .rpm + .AppImage
+make build-win      # .msi + .exe  (requer MSVC cross-compiler)
+make build-mac      # .dmg universal (Apple Silicon + Intel)
+```
+
+Os artefatos ficam em `src-tauri/target/<target>/release/bundle/`.  
+Junto com cada instalador, o build copia os **guias do usuário** em `docs/user-guide/`.
+
+### Servidor headless (Docker)
+
+```bash
+docker compose up --build
+# API disponível em http://localhost:5000
+```
+
+---
+
+## 🔒 Arquitetura de Segurança
+
+```
+Senha ──► Argon2id ──► KEK
+                          └──► AES-GCM(decrypt) ──► Chave Mestra (só em RAM)
+                                                          └──► HKDF ──► Subchave por arquivo
+                                                                            └──► AES-256-GCM / XChaCha20
+```
+
+- **Manifesto do cofre** cifrado (Fernet) + assinado digitalmente (Ed25519)  
+- **Log de auditoria** tamper-evident — cada entrada encadeada por hash e assinada  
+- **Panic Wipe** — zera chaves da memória ao menor sinal de comprometimento  
+- **Deep Integrity Inspection** — verifica magic bytes, entropia Shannon, SHA-256 + BLAKE2b  
+
+---
+
+## 🌐 Deploy em Produção
+
+```bash
+# Variáveis mínimas obrigatórias
+SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+KMS_PROVIDER=aws
+AWS_KMS_KEY_ID=arn:aws:kms:us-east-1:123456789:key/...
+
+# Com Docker Compose
+docker compose up -d
+```
+
+Coloque um **nginx / Caddy** na frente para TLS. Veja `docs/user-guide/readme.html` para o guia completo.
+
+---
+
+## 📄 Licença
+
+MIT © 2024 Rodrigo Lima

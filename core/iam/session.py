@@ -1,41 +1,32 @@
 import time
-from typing import Dict, Optional
+from threading import Lock
+from typing import Any
 
-class SessionKeyManager:
-    """
-    Singleton to hold sensitive keys in memory.
-    Maps session_id or user_id -> master_key.
-    """
-    _instance = None
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(SessionKeyManager, cls).__new__(cls)
-            cls._instance.keys = {} # user_id -> {key: bytes, expires: timestamp}
-        return cls._instance
 
-    def store_key(self, user_id, key: bytes, ttl: int = 300):
-        self.keys[str(user_id)] = {
-            "key": key,
-            "expires": time.time() + ttl
-        }
+class KeyManager:
+    def __init__(self) -> None:
+        self._items: dict[str, tuple[Any, float | None]] = {}
+        self._lock = Lock()
 
-    def get_key(self, user_id) -> Optional[bytes]:
-        data = self.keys.get(str(user_id))
-        if not data:
-            return None
-        
-        if time.time() > data["expires"]:
-            del self.keys[user_id]
-            return None
-            
-        # Refresh TTL on access?
-        data["expires"] = time.time() + 300
-        return data["key"]
-        
-    def clear_key(self, user_id):
-        uid = str(user_id)
-        if uid in self.keys:
-            del self.keys[uid]
+    def store_key(self, key_id: str | int, value: Any, ttl: int | None = None) -> None:
+        expires_at = time.time() + ttl if ttl else None
+        with self._lock:
+            self._items[str(key_id)] = (value, expires_at)
 
-key_manager = SessionKeyManager()
+    def get_key(self, key_id: str | int) -> Any:
+        with self._lock:
+            item = self._items.get(str(key_id))
+            if not item:
+                return None
+            value, expires_at = item
+            if expires_at and time.time() > expires_at:
+                self._items.pop(str(key_id), None)
+                return None
+            return value
+
+    def clear_key(self, key_id: str | int) -> None:
+        with self._lock:
+            self._items.pop(str(key_id), None)
+
+
+key_manager = KeyManager()

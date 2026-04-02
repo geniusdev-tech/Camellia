@@ -1,293 +1,476 @@
-import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ChevronUp, RefreshCw, File, Folder, Lock, HardDrive, Usb, Shield } from 'lucide-react'
+'use client'
+import { useState, useCallback, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Folder, File, Lock, Shield, RefreshCw, ChevronUp,
+  HardDrive, Usb, Smartphone, CheckSquare, Square,
+  Trash2, Edit3, ScanSearch, AlertTriangle, CheckCircle, CircleDashed,
+} from 'lucide-react'
 import { clsx } from 'clsx'
-import { deviceAPI, vaultAPI } from '../../api/client'
-import { useVaultStore } from '../../store/vaultStore'
-import Modal from '../ui/Modal'
-import SecurityReport from './SecurityReport'
+import { vaultAPI, deviceAPI } from '@/lib/api'
+import { getCachedScan, invalidateCachedScan, moveCachedScan, setCachedScan } from '@/lib/scan-cache'
+import { useVaultStore } from '@/store/vault'
+import type { FileItem, ScanFileResponse } from '@/lib/types'
 
-// Helper
-const formatBytes = (bytes: number, decimals = 2) => {
-    if (!+bytes) return '0 B'
-    const k = 1024
-    const dm = decimals < 0 ? 0 : decimals
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`
+function fmt(bytes: number) {
+  if (!bytes) return '0 B'
+  const k = 1024, s = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${(bytes / k ** i).toFixed(1)} ${s[i]}`
 }
 
-export default function FileExplorer() {
-    const {
-        currentPath,
-        currentDevice,
-        selectedFiles,
-        setCurrentPath,
-        setCurrentDevice,
-        toggleFileSelection,
-        clearSelection
-    } = useVaultStore()
+function DeviceIcon({ type }: { type: string }) {
+  if (type === 'usb')  return <Usb className="w-3.5 h-3.5" />
+  if (type === 'mtp')  return <Smartphone className="w-3.5 h-3.5" />
+  return <HardDrive className="w-3.5 h-3.5" />
+}
 
-    const [devices, setDevices] = useState<{ id: string, name: string, type: string }[]>([])
+function fileHealth(file: FileItem, scan?: ScanFileResponse | null) {
+  if (file.is_dir) {
+    return { label: 'Diretorio', tone: 'text-gray-500 bg-dark-800 border-white/[0.06]', Icon: Folder }
+  }
+  if (file.is_encrypted) {
+    return { label: 'Protegido', tone: 'text-accent bg-accent/10 border-accent/20', Icon: Lock }
+  }
+  if (scan?.risk_analysis?.level === 'CRITICAL' || scan?.risk_analysis?.level === 'HIGH') {
+    return { label: 'Suspeito', tone: 'text-warning bg-warning/10 border-warning/20', Icon: AlertTriangle }
+  }
+  if (scan?.risk_analysis?.level === 'LOW') {
+    return { label: 'Verificado', tone: 'text-primary-300 bg-primary-600/10 border-primary-500/20', Icon: CheckCircle }
+  }
+  if (/\.(exe|dll|bat|sh|bin|msi|appimage)$/i.test(file.name)) {
+    return { label: 'Nao verificado', tone: 'text-warning bg-warning/10 border-warning/20', Icon: AlertTriangle }
+  }
+  return { label: 'Normal', tone: 'text-gray-400 bg-dark-800 border-white/[0.06]', Icon: CircleDashed }
+}
 
-    // Scan State
-    const [scanReport, setScanReport] = useState<any>(null)
-    const [isScanModalOpen, setIsScanModalOpen] = useState(false)
-    const [isScanning, setIsScanning] = useState(false)
+export function FileExplorer() {
+  const qc = useQueryClient()
+  const {
+    currentPath, currentDevice,
+    selectedFiles, setCurrentPath, setCurrentDevice,
+    toggleFile, clearSelection, selectAll,
+  } = useVaultStore()
 
-    // Fetch Devices (Real Polling)
-    const { data: deviceData } = useQuery({
-        queryKey: ['devices'],
-        queryFn: deviceAPI.listDevices,
-        refetchInterval: 3000 // Fast polling for USB detection
+  const [scanReport, setScanReport] = useState<ScanFileResponse | null>(null)
+  const [scanning, setScanning]     = useState(false)
+  const [renaming, setRenaming]     = useState<FileItem | null>(null)
+  const [newName, setNewName]       = useState('')
+
+  /* ── Devices ─────────────────────────────────── */
+  const { data: deviceData } = useQuery({
+    queryKey: ['devices'],
+    queryFn:  deviceAPI.listDevices,
+    refetchInterval: 5_000,
+  })
+  const devices = deviceData?.devices ?? []
+  const userHomeDevice = devices.find((device) => device.id === 'system:user-home')
+  const systemDevices = devices.filter((device) => device.id.startsWith('system:'))
+  const userShortcuts = ['Documentos', 'Downloads', 'Imagens']
+    .map((name) => {
+      const base = userHomeDevice?.path
+      return base ? { name, path: `${base}/${name}` } : null
     })
+    .filter((item): item is { name: string; path: string } => Boolean(item))
 
-    useEffect(() => {
-        if (deviceData?.devices) {
-            setDevices(deviceData.devices)
-        }
-    }, [deviceData])
-
-    const { data, isLoading, error } = useQuery({
-        queryKey: ['files', currentPath, currentDevice],
-        queryFn: () => vaultAPI.listFiles({ path: currentPath, device_id: currentDevice || 'local' }),
-        refetchInterval: 5000 // Auto refresh
-    })
-
-    const files = data?.items || []
-
-    const handleFileClick = (file: any) => {
-        if (file.is_dir) {
-            setCurrentPath(file.path)
-            clearSelection()
-        } else {
-            toggleFileSelection(file.path)
-        }
+  useEffect(() => {
+    if (!userHomeDevice) return
+    if (currentDevice === 'local' || currentPath === 'home') {
+      setCurrentDevice(userHomeDevice.id)
+      setCurrentPath(userHomeDevice.path)
     }
+  }, [currentDevice, currentPath, setCurrentDevice, setCurrentPath, userHomeDevice])
 
-    const handleNavigateUp = () => {
-        if (currentPath === '/' || currentPath === '') return
-        const parent = currentPath.split('/').slice(0, -1).join('/') || '/'
-        setCurrentPath(parent)
-        clearSelection()
+  /* ── Files ───────────────────────────────────── */
+  const { data, isFetching, error } = useQuery({
+    queryKey:  ['files', currentPath, currentDevice],
+    queryFn:   () => vaultAPI.listFiles({ path: currentPath, device_id: currentDevice }),
+    refetchInterval: 6_000,
+  })
+  const files: FileItem[] = data?.items ?? []
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ['files'] })
+
+  const goUp = () => {
+    const parent = data?.parent_path
+    if (parent) { setCurrentPath(parent); clearSelection() }
+  }
+
+  /* ── Actions ─────────────────────────────────── */
+  const handleScan = useCallback(async (path: string) => {
+    setScanning(true)
+    try {
+      const file = files.find((item) => item.path === path)
+      const r = await vaultAPI.scanFile(path) as ScanFileResponse
+      qc.setQueryData(['scan', path], r)
+      if (file) setCachedScan(file, r)
+      setScanReport(r)
+    } finally { setScanning(false) }
+  }, [files, qc])
+
+  const handleDelete = useCallback(async (item: FileItem) => {
+    if (!confirm(`Deletar "${item.name}"? Esta ação é irreversível.`)) return
+    await vaultAPI.fileAction({ action: 'delete', path: item.path })
+    qc.removeQueries({ queryKey: ['scan', item.path] })
+    invalidateCachedScan(item.path)
+    clearSelection(); refresh()
+  }, [clearSelection, qc, refresh])
+
+  const handleRename = useCallback(async () => {
+    if (!renaming || !newName.trim()) return
+    const nextFile: FileItem = {
+      ...renaming,
+      name: newName.trim(),
+      path: `${renaming.path.slice(0, renaming.path.lastIndexOf('/') + 1)}${newName.trim()}`,
     }
-
-    const handleScanFile = async (path: string) => {
-        setIsScanning(true)
-        try {
-            const report = await vaultAPI.scanFile(path)
-            setScanReport(report)
-            setIsScanModalOpen(true)
-        } catch (err: any) {
-            alert('Falha no scan: ' + err.message)
-        } finally {
-            setIsScanning(false)
-        }
+    await vaultAPI.fileAction({ action: 'rename', path: renaming.path, new_name: newName.trim() })
+    const previousScan = qc.getQueryData<ScanFileResponse>(['scan', renaming.path])
+    qc.removeQueries({ queryKey: ['scan', renaming.path] })
+    invalidateCachedScan(renaming.path)
+    if (previousScan) {
+      qc.setQueryData(['scan', nextFile.path], previousScan)
+      moveCachedScan(renaming.path, nextFile)
     }
+    setRenaming(null); setNewName(''); refresh()
+  }, [newName, qc, refresh, renaming])
 
-    // Mobile File Card Component
-    const FileCard = ({ file, isSelected, onToggle, onClick }: any) => (
-        <div
-            className={clsx(
-                "flex items-center gap-3 p-3 rounded-xl border mb-2 active:scale-[0.98] transition-all",
-                isSelected
-                    ? "bg-primary/5 border-primary dark:bg-primary/10"
-                    : "bg-white dark:bg-dark-800 border-gray-200 dark:border-dark-700"
-            )}
-            onClick={onClick}
-        >
-            <div className="relative shrink-0">
-                {file.is_dir ? (
-                    <Folder className="w-10 h-10 text-yellow-500 fill-yellow-500/20" />
-                ) : file.is_encrypted ? (
-                    <Lock className="w-10 h-10 text-secondary fill-secondary/20" />
-                ) : (
-                    <File className="w-10 h-10 text-gray-400" />
-                )}
-            </div>
+  const allSelected = files.length > 0 && files.every((f) => selectedFiles.has(f.path))
 
-            <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    {file.name}
-                </p>
-                <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {file.size > 0 ? formatBytes(file.size) : (file.is_dir ? 'Pasta' : '0 B')}
-                    </span>
-                    {!file.is_dir && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); handleScanFile(file.path) }}
-                            className="p-1 hover:bg-gray-100 dark:hover:bg-dark-700 rounded text-gray-400 hover:text-primary transition-colors"
-                            title="Verificar Integridade"
-                        >
-                            <Shield className="w-3 h-3" />
-                        </button>
-                    )}
-                </div>
-            </div>
+  /* ── Scan Report Modal ───────────────────────── */
+  const riskColor = scanReport
+    ? { LOW: 'text-accent', HIGH: 'text-warning', CRITICAL: 'text-danger' }[
+        (scanReport.risk_analysis as { level: string })?.level
+      ] ?? 'text-white'
+    : 'text-white'
 
-            <div onClick={(e) => e.stopPropagation()}>
-                <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => onToggle(file.path)}
-                    className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
-                />
-            </div>
-        </div>
-    )
-
-    return (
-        <div className="space-y-4">
-            {/* Header / Device Selector */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-dark-900 p-4 rounded-xl border border-gray-200 dark:border-dark-800 shadow-sm">
-                <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0 scrollbar-hide">
-                    {devices.map(device => (
-                        <button
-                            key={device.id}
-                            onClick={() => setCurrentDevice(device.id)}
-                            className={clsx(
-                                'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors',
-                                currentDevice === device.id
-                                    ? 'bg-primary text-white shadow-md'
-                                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-800'
-                            )}
-                        >
-                            {device.type === 'usb' ? <Usb className="w-4 h-4" /> : <HardDrive className="w-4 h-4" />}
-                            {device.name}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Path Breadcrumbs */}
-                <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-dark-950 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-dark-800 overflow-hidden w-full sm:w-auto">
-                    <span className="truncate flex-1 sm:flex-none" dir="rtl">{currentPath || '/'}</span>
-                    {currentPath !== '/' && currentPath !== '' && (
-                        <button onClick={handleNavigateUp} className="p-1 hover:text-primary transition-colors shrink-0">
-                            <ChevronUp className="w-4 h-4" />
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            {/* Error Message */}
-            {error && (
-                <div className="p-4 rounded-xl bg-danger/10 text-danger border border-danger/20 text-sm">
-                    {(error as Error).message}
-                </div>
-            )}
-
-            {/* File List */}
-            <div className="bg-white dark:bg-dark-900 rounded-xl border border-gray-200 dark:border-dark-800 shadow-sm overflow-hidden min-h-[400px]">
-                {isLoading ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                        <RefreshCw className="w-8 h-8 animate-spin mb-2" />
-                        <p className="text-sm">Carregando arquivos...</p>
-                    </div>
-                ) : files.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                        <Folder className="w-12 h-12 mb-2 opacity-20" />
-                        <p className="text-sm">Pasta vazia</p>
-                    </div>
-                ) : (
-                    <>
-                        {/* Desktop Table View (Hidden on Mobile) */}
-                        <div className="hidden sm:block overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead className="bg-gray-50 dark:bg-dark-950 border-b border-gray-200 dark:border-dark-800">
-                                    <tr>
-                                        <th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400 w-12">
-                                            <div className="w-4 h-4" />
-                                        </th>
-                                        <th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Nome</th>
-                                        <th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Ações</th>
-                                        <th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Tamanho</th>
-                                        <th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Tipo</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 dark:divide-dark-800">
-                                    {files.map((file: any) => (
-                                        <tr
-                                            key={file.path}
-                                            className={clsx(
-                                                "hover:bg-gray-50 dark:hover:bg-dark-800/50 transition-colors cursor-pointer",
-                                                selectedFiles.has(file.path) && "bg-primary/5 dark:bg-primary/10"
-                                            )}
-                                            onClick={() => handleFileClick(file)}
-                                        >
-                                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedFiles.has(file.path)}
-                                                    onChange={() => toggleFileSelection(file.path)}
-                                                    className="rounded border-gray-300 text-primary focus:ring-primary"
-                                                />
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-3">
-                                                    {file.is_dir ? <Folder className="w-5 h-5 text-yellow-500 fill-yellow-500/20" /> : file.is_encrypted ? <Lock className="w-5 h-5 text-secondary fill-secondary/20" /> : <File className="w-5 h-5 text-gray-400" />}
-                                                    <span className="font-medium text-gray-900 dark:text-gray-200">{file.name}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {!file.is_dir && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleScanFile(file.path) }}
-                                                        className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 dark:bg-dark-800 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-primary transition-colors"
-                                                    >
-                                                        <Shield className="w-3 h-3" />
-                                                        Scan
-                                                    </button>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
-                                                {file.is_dir ? '-' : formatBytes(file.size)}
-                                            </td>
-                                            <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
-                                                {file.is_encrypted ? 'Criptografado' : file.is_dir ? 'Pasta' : 'Arquivo'}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Mobile Card View (Visible on Mobile Only) */}
-                        <div className="sm:hidden p-4">
-                            {files.map((file: any) => (
-                                <FileCard
-                                    key={file.path}
-                                    file={file}
-                                    isSelected={selectedFiles.has(file.path)}
-                                    onToggle={() => toggleFileSelection(file.path)}
-                                    onClick={() => handleFileClick(file)}
-                                />
-                            ))}
-                        </div>
-                    </>
-                )}
-            </div>
-
-            {/* Scan Modal */}
-            <Modal
-                isOpen={isScanModalOpen}
-                onClose={() => setIsScanModalOpen(false)}
-                title="Deep Integrity Report"
-                size="lg"
+  return (
+    <div className="flex flex-col gap-3">
+      {systemDevices.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {systemDevices.map((device) => (
+            <button
+              key={device.id}
+              onClick={() => { setCurrentDevice(device.id); setCurrentPath(device.path); clearSelection() }}
+              className={clsx(
+                'glass rounded-2xl border px-4 py-3 text-left transition-all',
+                currentDevice === device.id
+                  ? 'border-primary-500/30 bg-primary-600/10'
+                  : 'border-white/[0.06] hover:border-white/[0.12] hover:bg-dark-800/60',
+              )}
             >
-                {scanReport && <SecurityReport report={scanReport} />}
-            </Modal>
-
-            {/* Loading Overlay */}
-            {isScanning && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-                    <div className="bg-white dark:bg-dark-800 p-6 rounded-xl shadow-2xl flex flex-col items-center">
-                        <RefreshCw className="w-10 h-10 text-primary animate-spin mb-4" />
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">Analisando Arquivo...</h3>
-                        <p className="text-sm text-gray-500">Calculando hashes e entropia</p>
-                    </div>
-                </div>
-            )}
+              <div className="flex items-center gap-2 mb-1.5">
+                <HardDrive className={clsx('w-4 h-4', currentDevice === device.id ? 'text-primary-300' : 'text-gray-500')} />
+                <span className="text-sm font-semibold text-white">{device.name}</span>
+              </div>
+              <p className="text-[11px] text-gray-500 font-mono truncate">{device.path}</p>
+            </button>
+          ))}
         </div>
-    )
+      )}
+
+      {userHomeDevice && data?.current_path === userHomeDevice.path && (
+        <div className="flex flex-wrap gap-2">
+          {userShortcuts.map((shortcut) => (
+            <button
+              key={shortcut.path}
+              onClick={() => { setCurrentPath(shortcut.path); clearSelection() }}
+              className="rounded-full border border-white/[0.08] bg-dark-800 px-3 py-1.5 text-xs text-gray-300 hover:text-white hover:border-white/[0.16] transition-all"
+            >
+              {shortcut.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Device Tabs ── */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        <button
+          onClick={() => {
+            setCurrentDevice(userHomeDevice?.id ?? 'local')
+            setCurrentPath(userHomeDevice?.path ?? 'home')
+            clearSelection()
+          }}
+          className={clsx(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all border',
+            currentDevice === (userHomeDevice?.id ?? 'local')
+              ? 'bg-primary-600/20 border-primary-500/30 text-primary-300'
+              : 'bg-dark-800 border-white/[0.06] text-gray-400 hover:text-white',
+          )}
+        >
+          <HardDrive className="w-3 h-3" /> {userHomeDevice?.name ?? 'Usuario'}
+        </button>
+        {devices.filter((device) => device.id !== 'system:user-home').map((d) => (
+          <button
+            key={d.id}
+            onClick={() => { setCurrentDevice(d.id); setCurrentPath(d.path); clearSelection() }}
+            className={clsx(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all border',
+              currentDevice === d.id
+                ? 'bg-primary-600/20 border-primary-500/30 text-primary-300'
+                : 'bg-dark-800 border-white/[0.06] text-gray-400 hover:text-white',
+            )}
+          >
+            <DeviceIcon type={d.type} /> {d.name}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Explorer Card ── */}
+      <div className="glass rounded-2xl shadow-panel overflow-hidden">
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.05] bg-dark-850/60">
+          <button onClick={goUp} disabled={!data?.parent_path} className="p-1.5 rounded-lg hover:bg-dark-700 text-gray-400 hover:text-white transition-all disabled:opacity-30">
+            <ChevronUp className="w-4 h-4" />
+          </button>
+          <button onClick={refresh} className="p-1.5 rounded-lg hover:bg-dark-700 text-gray-400 hover:text-white transition-all">
+            <RefreshCw className={clsx('w-4 h-4', isFetching && 'animate-spin')} />
+          </button>
+
+          <span className="flex-1 text-xs text-gray-500 font-mono truncate px-2" dir="rtl">
+            {data?.current_path ?? currentPath}
+          </span>
+
+          {files.length > 0 && (
+            <button
+              onClick={() => allSelected ? clearSelection() : selectAll(files.map((f) => f.path))}
+              className="p-1.5 rounded-lg hover:bg-dark-700 text-gray-400 hover:text-white transition-all"
+            >
+              {allSelected ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+            </button>
+          )}
+        </div>
+
+        {/* Selection bar */}
+        <AnimatePresence>
+          {selectedFiles.size > 0 && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="flex items-center gap-2 px-4 py-2 bg-primary-600/10 border-b border-primary-500/20 text-xs text-primary-300">
+                <CheckSquare className="w-3.5 h-3.5" />
+                <span>{selectedFiles.size} {selectedFiles.size === 1 ? 'item selecionado' : 'itens selecionados'}</span>
+                <button onClick={clearSelection} className="ml-auto text-gray-500 hover:text-white transition-colors">
+                  Limpar
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Error */}
+        {error && (
+          <div className="flex items-center gap-2 px-4 py-3 text-sm text-danger bg-danger/10 border-b border-danger/20">
+            <AlertTriangle className="w-4 h-4" />
+            {(error as Error).message}
+          </div>
+        )}
+
+        {/* File list */}
+        <div className="divide-y divide-white/[0.04] min-h-[300px] max-h-[520px] overflow-y-auto">
+          {!isFetching && files.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-600">
+              <Folder className="w-10 h-10 mb-2 opacity-30" />
+              <p className="text-sm">Pasta vazia</p>
+            </div>
+          )}
+
+          {files.map((file) => {
+            const selected = selectedFiles.has(file.path)
+            const cachedScan = qc.getQueryData<ScanFileResponse>(['scan', file.path]) ?? getCachedScan(file)
+            const health = fileHealth(file, cachedScan)
+            return (
+              <div
+                key={file.path}
+                className={clsx(
+                  'group flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors',
+                  selected ? 'bg-primary-600/10' : 'hover:bg-dark-800/50',
+                )}
+                onClick={() => {
+                  if (file.is_dir) { setCurrentPath(file.path); clearSelection() }
+                  else toggleFile(file.path)
+                }}
+              >
+                {/* Checkbox */}
+                <div onClick={(e) => { e.stopPropagation(); toggleFile(file.path) }} className="shrink-0">
+                  {selected
+                    ? <CheckSquare className="w-4 h-4 text-accent" />
+                    : <Square className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
+                  }
+                </div>
+
+                {/* Icon */}
+                <div className="shrink-0 w-8 h-8 rounded-xl flex items-center justify-center bg-dark-800">
+                  {file.is_dir
+                    ? <Folder className="w-4 h-4 text-yellow-400" />
+                    : file.is_encrypted
+                      ? <Lock className="w-4 h-4 text-accent" />
+                      : <File className="w-4 h-4 text-gray-400" />
+                  }
+                </div>
+
+                {/* Name + meta */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="text-sm text-white font-medium truncate">{file.name}</p>
+                    <span
+                      className={clsx(
+                        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0',
+                        health.tone,
+                      )}
+                    >
+                      <health.Icon className="w-3 h-3" />
+                      {health.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    {file.is_dir
+                      ? 'Pasta'
+                      : file.is_encrypted
+                        ? `Criptografado · ${fmt(file.size)}`
+                        : cachedScan?.risk_analysis?.level
+                          ? `${health.label} · ${fmt(file.size)}`
+                          : fmt(file.size)}
+                  </p>
+                </div>
+
+                {/* Actions (appear on hover) */}
+                {!file.is_dir && (
+                  <div
+                    className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => handleScan(file.path)}
+                      title="Inspecionar integridade"
+                      className="p-1.5 rounded-lg hover:bg-dark-700 text-gray-500 hover:text-accent transition-all"
+                    >
+                      <Shield className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => { setRenaming(file); setNewName(file.name) }}
+                      title="Renomear"
+                      className="p-1.5 rounded-lg hover:bg-dark-700 text-gray-500 hover:text-white transition-all"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(file)}
+                      title="Deletar"
+                      className="p-1.5 rounded-lg hover:bg-danger/20 text-gray-500 hover:text-danger transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── Rename Modal ── */}
+      <AnimatePresence>
+        {renaming && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setRenaming(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="glass rounded-2xl p-6 w-full max-w-sm shadow-panel"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-gray-400" /> Renomear
+              </h3>
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleRename()}
+                className="w-full bg-dark-850 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-accent/50 mb-4"
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setRenaming(null)} className="flex-1 py-2 rounded-xl bg-dark-700 text-sm text-gray-400 hover:text-white transition-all">Cancelar</button>
+                <button onClick={handleRename} className="flex-1 py-2 rounded-xl bg-accent text-dark-900 font-semibold text-sm hover:bg-accent-300 transition-all">Renomear</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Scan Report Modal ── */}
+      <AnimatePresence>
+        {(scanning || scanReport) && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setScanReport(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="glass rounded-2xl p-6 w-full max-w-lg shadow-panel"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {scanning ? (
+                <div className="flex flex-col items-center py-8 gap-4">
+                  <ScanSearch className="w-10 h-10 text-accent animate-pulse" />
+                  <p className="text-sm text-gray-400">Analisando integridade do arquivo…</p>
+                </div>
+              ) : scanReport ? (
+                <>
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-gray-400" /> Deep Integrity Report
+                    </h3>
+                    <button onClick={() => setScanReport(null)} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
+                  </div>
+
+                  <div className={clsx('flex items-center gap-3 p-4 rounded-xl border mb-4',
+                    (scanReport.risk_analysis as {level:string})?.level === 'LOW'
+                      ? 'bg-accent/10 border-accent/20'
+                      : (scanReport.risk_analysis as {level:string})?.level === 'HIGH'
+                        ? 'bg-warning/10 border-warning/20'
+                        : 'bg-danger/10 border-danger/20',
+                  )}>
+                    {(scanReport.risk_analysis as {level:string})?.level === 'LOW'
+                      ? <CheckCircle className={clsx('w-6 h-6', riskColor)} />
+                      : <AlertTriangle className={clsx('w-6 h-6', riskColor)} />
+                    }
+                    <div>
+                      <p className={clsx('font-bold', riskColor)}>
+                        Risco: {(scanReport.risk_analysis as {level:string})?.level}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {String((scanReport.risk_analysis as {notes?:string})?.notes || 'Nenhum fator de risco encontrado.')}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    {[
+                      ['SHA-256', (scanReport.hashes as {sha256:string})?.sha256],
+                      ['BLAKE2b', (scanReport.hashes as {blake2b:string})?.blake2b],
+                      ['Entropia', String((scanReport.risk_analysis as {entropy:number})?.entropy ?? '-')],
+                      ['Tamanho', String((scanReport as {size?:number})?.size ?? '-')],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex justify-between gap-4 py-2 border-b border-white/[0.04]">
+                        <span className="text-gray-500 shrink-0">{k}</span>
+                        <span className="text-white font-mono truncate text-right">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
 }

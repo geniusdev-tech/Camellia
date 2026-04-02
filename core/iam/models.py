@@ -1,44 +1,42 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, JSON
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import declarative_base, relationship
+
 
 Base = declarative_base()
 
-class Role(Base):
-    __tablename__ = 'roles'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String, unique=True, nullable=False) # e.g. "owner", "admin"
-    permissions = Column(JSON, default=list) # e.g. ["vault:read", "vault:write"]
-    description = Column(String)
+ROLE_PERMISSIONS = {
+    "owner": {
+        "vault:read",
+        "vault:write",
+        "audit:read",
+    },
+    "user": {
+        "vault:read",
+        "vault:write",
+    },
+}
 
-    users = relationship("User", back_populates="role")
+
+class Role(Base):
+    __tablename__ = "roles"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), unique=True, nullable=False)
+
 
 class User(Base):
-    __tablename__ = 'users'
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True, nullable=False) # email
-    password_hash = Column(String, nullable=False)
-    
-    # Crypto Fields
-    wrapped_key = Column(String, nullable=True) # JSON string of wrapped master key
-    
-    # IAM Fields
-    role_id = Column(Integer, ForeignKey('roles.id'))
-    role = relationship("Role", back_populates="users")
-    
-    mfa_secret_enc = Column(String, nullable=True) # Encrypted TOTP secret
-    is_active = Column(Boolean, default=True)
-    last_login = Column(String, nullable=True) # ISO format
-    
+    username = Column(String(255), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    wrapped_key = Column(Text, nullable=True)
+    mfa_secret_enc = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=True)
+
+    role = relationship("Role")
+
     def has_permission(self, permission: str) -> bool:
-        if not self.role or not self.role.permissions:
-            return False
-            
-        # Wildcard check (e.g. "vault:*")
-        for perm in self.role.permissions:
-            if perm == "*" or perm == permission:
-                return True
-            if perm.endswith("*") and permission.startswith(perm[:-1]):
-                return True
-        return False
+        role_name = self.role.name if self.role else "user"
+        return permission in ROLE_PERMISSIONS.get(role_name, set())

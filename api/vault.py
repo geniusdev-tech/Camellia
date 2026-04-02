@@ -1,208 +1,219 @@
-from flask import Blueprint, request, jsonify, g
+"""
+Vault API Blueprint — file listing, encrypt/decrypt, scan, devices.
+All endpoints require JWT auth via require_auth decorator.
+"""
 import os
-import shutil
+from flask import Blueprint, request, jsonify, g
 from core.sys.fs import PathValidator
+from core.iam.session import key_manager
 from core.iam.rbac import require_auth, require_permission
 
-vault_bp = Blueprint('vault', __name__, url_prefix='/api')
+vault_bp = Blueprint("vault", __name__, url_prefix="/api")
 
-ROOT_DIR = str(PathValidator.get_fallback())
 
 def _get_managers():
     from services import auth_manager, vault_manager, task_manager
     from core.sys.devices import DeviceManager
-    device_manager = DeviceManager()
-    return auth_manager, vault_manager, task_manager, device_manager
+    return auth_manager, vault_manager, task_manager, DeviceManager()
 
-@vault_bp.route('/files/list', methods=['POST'])
+
+def _ensure_unlocked():
+    if not key_manager.get_key(getattr(g, "user_id", None)):
+        return jsonify({"success": False, "msg": "Vault bloqueado ou sessão expirada. Faça login novamente."}), 401
+    return None
+
+
+# ── Files ─────────────────────────────────────────────────────────────────────
+
+@vault_bp.route("/files/list", methods=["POST"])
 @require_auth
-@require_permission('vault:read')
+@require_permission("vault:read")
 def list_files():
-    # auth_manager not needed for auth anymore, but vault_manager needs user_id
     _, vault, _, _ = _get_managers()
-    
-    raw_path = request.json.get('path')
-    if raw_path == "home": raw_path = None 
 
-    is_valid, path_obj, error_msg = PathValidator.validate(raw_path, require_dir=True)
-    
-    final_path = str(path_obj)
+    data     = request.get_json(silent=True) or {}
+    raw_path = data.get("path")
+    if raw_path in (None, "", "home"):
+        raw_path = None
+
+    is_valid, path_obj, error_msg = PathValidator.validate(
+        str(path_obj_fallback := PathValidator.get_fallback()) if raw_path is None else raw_path,
+        require_dir=True,
+    )
+
+    if raw_path is None:
+        # Explicitly use home
+        is_valid = True
+        path_obj = PathValidator.get_fallback()
+
+    final_path   = str(path_obj)
     user_warning = None
 
     if not is_valid:
-        print(f"[Security] Path fallback triggered. Request: {raw_path}. Reason: {error_msg}")
-        user_warning = "Previous location unavailable. Redirected to Home."
+        user_warning = "Localização anterior indisponível. Redirecionado para Home."
 
     try:
         items = vault.list_files(final_path, user_id=g.user_id)
-        items.sort(key=lambda x: (not x.get('is_dir', False), x['name'].lower()))
+        items.sort(key=lambda x: (not x.get("is_dir", False), x["name"].startswith("."), x["name"].lower()))
         parent = os.path.dirname(final_path)
-        
-        response = {
-            'success': True, 
-            'items': items, 
-            'current_path': final_path, 
-            'parent_path': parent
+
+        response: dict = {
+            "success": True,
+            "items":   items,
+            "current_path": final_path,
+            "parent_path":  parent if parent != final_path else None,
         }
-        
         if user_warning:
-            response['msg'] = user_warning
-            
+            response["msg"] = user_warning
         return jsonify(response)
-        
+
     except PermissionError:
-        return jsonify({'success': False, 'msg': "Vault Locked or Session Expired"}), 401
+        return jsonify({"success": False, "msg": "Vault bloqueado ou sessão expirada"}), 401
     except Exception as e:
-        return jsonify({'success': False, 'msg': f"System Error: {str(e)}"}), 500
+        return jsonify({"success": False, "msg": f"Erro do sistema: {e}"}), 500
 
-@vault_bp.route('/files/action', methods=['POST'])
+
+@vault_bp.route("/files/action", methods=["POST"])
 @require_auth
-@require_permission('vault:write')
+@require_permission("vault:write")
 def file_action():
-    _, _, _, _ = _get_managers()
+    data   = request.get_json(silent=True) or {}
+    action = data.get("action")
+    raw    = data.get("path")
 
-    data = request.json
-    action = data.get('action')
-    raw_path = data.get('path')
-    
-    is_valid, path_obj, err_msg = PathValidator.validate(raw_path, require_exists=True)
-    
+    is_valid, path_obj, err = PathValidator.validate(raw, require_exists=True)
     if not is_valid:
-        return jsonify({'success': False, 'msg': f"Invalid target: {err_msg}"}), 400
-        
+        return jsonify({"success": False, "msg": f"Caminho inválido: {err}"}), 400
+
     path = str(path_obj)
-    
+
     try:
-        if action == 'delete':
+        if action == "delete":
             _, vault, _, _ = _get_managers()
-            # Use delete_item from VaultManager to ensure manifest consistency
-            success, msg = vault.delete_item(path, user_id=g.user_id)
-            return jsonify({'success': success, 'msg': msg})
-            
-        elif action == 'rename':
-             new_name = data.get('new_name')
-             if not new_name or '..' in new_name or '/' in new_name or '\\' in new_name:
-                 return jsonify({'success': False, 'msg': "Invalid filename"}), 400
-                 
-             new_path = os.path.join(os.path.dirname(path), new_name)
-             
-             if os.path.exists(new_path):
-                  return jsonify({'success': False, 'msg': "Destination already exists"}), 400
+            ok, msg = vault.delete_item(path, user_id=g.user_id)
+            return jsonify({"success": ok, "msg": msg})
 
-             os.rename(path, new_path)
-             return jsonify({'success': True, 'msg': "Renamed"})
-             
+        elif action == "rename":
+            new_name = data.get("new_name", "")
+            if not new_name or ".." in new_name or "/" in new_name or "\\" in new_name:
+                return jsonify({"success": False, "msg": "Nome de arquivo inválido"}), 400
+            new_path = os.path.join(os.path.dirname(path), new_name)
+            if os.path.exists(new_path):
+                return jsonify({"success": False, "msg": "Destino já existe"}), 409
+            os.rename(path, new_path)
+            return jsonify({"success": True, "msg": "Renomeado"})
+
+        return jsonify({"success": False, "msg": f"Ação desconhecida: {action}"}), 400
+
     except Exception as e:
-        return jsonify({'success': False, 'msg': str(e)}), 500
+        return jsonify({"success": False, "msg": str(e)}), 500
 
-@vault_bp.route('/process/start', methods=['POST'])
+
+# ── Process ───────────────────────────────────────────────────────────────────
+
+@vault_bp.route("/process/start", methods=["POST"])
 @require_auth
-@require_permission('vault:write')
+@require_permission("vault:write")
 def start_process():
     _, _, tasks, _ = _get_managers()
-        
-    data = request.json
-    raw_path = data.get('path')
-    encrypt = data.get('encrypt')
-    uuid_target = data.get('uuid')
-    device_id = data.get('device_id', 'local')
-    
-    is_valid, path_obj, err_msg = PathValidator.validate(raw_path, require_exists=True)
-    
-    if not is_valid:
-        return jsonify({'success': False, 'msg': f"File access error: {err_msg}"}), 400
-        
-    path = str(path_obj)
-    action = "encrypt" if encrypt else "decrypt"
-    
-    # Pass user_id to task metadata or context!
-    # TaskManager needs update to forward user_id to vault_manager calls
-    task_id = tasks.start_task(action, path, uuid=uuid_target, device_id=device_id, user_id=g.user_id)
-    return jsonify({'success': True, 'task_id': task_id})
+    unlocked = _ensure_unlocked()
+    if unlocked:
+        return unlocked
+    data    = request.get_json(silent=True) or {}
+    raw     = data.get("path")
+    encrypt = data.get("encrypt", True)
+    uuid_t  = data.get("uuid")
+    dev_id  = data.get("device_id", "local")
 
-@vault_bp.route('/process/batch', methods=['POST'])
+    is_valid, path_obj, err = PathValidator.validate(raw, require_exists=True)
+    if not is_valid:
+        return jsonify({"success": False, "msg": f"Erro de acesso: {err}"}), 400
+
+    action  = "encrypt" if encrypt else "decrypt"
+    task_id = tasks.start_task(action, str(path_obj), uuid=uuid_t, device_id=dev_id, user_id=g.user_id)
+    return jsonify({"success": True, "task_id": task_id})
+
+
+@vault_bp.route("/process/batch", methods=["POST"])
 @require_auth
-@require_permission('vault:write')
+@require_permission("vault:write")
 def batch_process():
     _, _, tasks, _ = _get_managers()
-        
-    data = request.json
-    targets = data.get('targets', [])
-    recursive = data.get('recursive', False)
-    device_id = data.get('device_id', 'local')
-    encrypt = data.get('encrypt', True)
-    
-    valid_targets = []
-    errors = []
-    
+    unlocked = _ensure_unlocked()
+    if unlocked:
+        return unlocked
+    data      = request.get_json(silent=True) or {}
+    targets   = data.get("targets", [])
+    recursive = data.get("recursive", False)
+    dev_id    = data.get("device_id", "local")
+    encrypt   = data.get("encrypt", True)
+
+    valid_targets, errors = [], []
     for t in targets:
-        v, p, msg = PathValidator.validate(t, require_exists=True)
-        if v:
+        ok, p, msg = PathValidator.validate(t, require_exists=True)
+        if ok:
             valid_targets.append(str(p))
         else:
             errors.append(f"{t}: {msg}")
-            
-    if not valid_targets:
-        return jsonify({'success': False, 'msg': "No valid targets found", 'errors': errors}), 400
-    
-    action = "batch_encrypt" if encrypt else "batch_decrypt"
-        
-    task_id = tasks.start_task(action, valid_targets, recursive=recursive, device_id=device_id, user_id=g.user_id)
-    return jsonify({'success': True, 'task_id': task_id})
 
-@vault_bp.route('/process/cancel', methods=['POST'])
+    if not valid_targets:
+        return jsonify({"success": False, "msg": "Nenhum alvo válido", "errors": errors}), 400
+
+    action  = "batch_encrypt" if encrypt else "batch_decrypt"
+    task_id = tasks.start_task(action, valid_targets, recursive=recursive, device_id=dev_id, user_id=g.user_id)
+    return jsonify({"success": True, "task_id": task_id})
+
+
+@vault_bp.route("/process/cancel", methods=["POST"])
 @require_auth
 def cancel_process():
     _, _, tasks, _ = _get_managers()
-    task_id = request.json.get('task_id')
-    success = tasks.cancel_task(task_id)
-    return jsonify({'success': success})
+    task_id = (request.get_json(silent=True) or {}).get("task_id")
+    ok = tasks.cancel_task(task_id) if task_id else False
+    return jsonify({"success": ok})
 
-@vault_bp.route('/process/status/<task_id>')
+
+@vault_bp.route("/process/status/<task_id>")
 @require_auth
-def process_status(task_id):
+def process_status(task_id: str):
     _, _, tasks, _ = _get_managers()
     task = tasks.get_task(task_id)
     if not task:
-        return jsonify({'success': False}), 404
-        
+        return jsonify({"success": False}), 404
     return jsonify({
-        'progress': task.progress,
-        'status': task.status,
-        'logs': task.logs,
-        'done': task.status in ["Completed", "Error", "Cancelled"]
+        "progress": task.progress,
+        "status":   task.status,
+        "logs":     task.logs,
+        "done":     task.status in ("Completed", "Error", "Cancelled"),
     })
 
-@vault_bp.route('/devices/list', methods=['GET'])
+
+# ── Devices ───────────────────────────────────────────────────────────────────
+
+@vault_bp.route("/devices/list", methods=["GET"])
 @require_auth
-def listing_devices():
+def list_devices():
     _, _, _, dev_man = _get_managers()
     try:
-        devices = dev_man.list_devices()
-        return jsonify({'success': True, 'devices': devices})
+        return jsonify({"success": True, "devices": dev_man.list_devices()})
     except Exception as e:
-        return jsonify({'success': False, 'msg': str(e)}), 500
+        return jsonify({"success": False, "msg": str(e)}), 500
 
-@vault_bp.route('/security/scan', methods=['POST'])
+
+# ── Security scan ─────────────────────────────────────────────────────────────
+
+@vault_bp.route("/security/scan", methods=["POST"])
 @require_auth
-@require_permission('audit:read') 
-# Maybe vault:read? Scanning is analysis. Let's say audit:read or vault:read.
-# Reverting to vault:read as integrity check is basic vault op.
+@require_permission("vault:read")
 def scan_file():
     from core.security.integrity import IntegrityInspector
-    
-    data = request.json
-    raw_path = data.get('path')
-    
-    is_valid, path_obj, err_msg = PathValidator.validate(raw_path, require_exists=True)
-    
+
+    raw = (request.get_json(silent=True) or {}).get("path")
+    is_valid, path_obj, err = PathValidator.validate(raw, require_exists=True)
     if not is_valid:
-        return jsonify({'success': False, 'msg': f"File error: {err_msg}"}), 400
-        
-    path = str(path_obj)
-    
+        return jsonify({"success": False, "msg": f"Erro: {err}"}), 400
+
     try:
-        report = IntegrityInspector.inspect_file(path)
-        return jsonify(report)
+        return jsonify(IntegrityInspector.inspect_file(str(path_obj)))
     except Exception as e:
-        return jsonify({'success': False, 'msg': str(e)}), 500
+        return jsonify({"success": False, "msg": str(e)}), 500

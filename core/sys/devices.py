@@ -1,90 +1,41 @@
+from pathlib import Path
 
-import os
-import shutil
-import getpass
 
 class DeviceManager:
-    def __init__(self):
-        self.user = getpass.getuser()
-        self.uid =  os.getuid()
-        
-    def list_devices(self):
-        """
-        Detects external storage devices.
-        1. USB Mass Storage (via /proc/mounts filtered for external media)
-        2. MTP/PTP Devices (via GVFS)
-        """
-        devices = []
-        
-        # 1. USB Storage (Heuristic: Mounted in /media/USER or /run/media/USER)
-        # Note: Linux automount paths differ. Common: /media/<user>/<label>, /run/media/<user>/<label>
-        
-        mounts_data = self._read_mounts()
-        potential_roots = [
-            f"/media/{self.user}",
-            f"/run/media/{self.user}"
-        ]
-        
-        for mount in mounts_data:
-            path = mount['path']
-            
-            # Check if mount point starts with known automount roots
-            is_external = any(path.startswith(root) for root in potential_roots)
-            
-            if is_external:
-                 devices.append({
-                     "id": f"usb:{mount['device']}", # Device node e.g. /dev/sdb1
-                     "name": os.path.basename(path) or mount['device'],
-                     "path": path,
-                     "type": "usb",
-                     "fs": mount['fs']
-                 })
+    def list_devices(self) -> list[dict[str, str]]:
+        devices: list[dict[str, str]] = []
+        seen: set[str] = set()
 
-        # 2. MTP Devices (GVFS)
-        # GVFS mounts usually at /run/user/$UID/gvfs/
-        gvfs_root = f"/run/user/{self.uid}/gvfs"
-        if os.path.exists(gvfs_root):
-            try:
-                for entry in os.scandir(gvfs_root):
-                    if entry.is_dir():
-                        # MTP folder usually has colons or is named 'mtp:...'
-                        # Example: mtp:host=Xiaomi_...
-                        friendly_name = entry.name.replace("mtp:host=", "MTP: ")
-                        devices.append({
-                            "id": f"mtp:{entry.name}",
-                            "name": friendly_name,
-                            "path": entry.path,
-                            "type": "mtp",
-                            "fs": "fuse.gvfsd-fuse"
-                        })
-            except (PermissionError, OSError):
-                pass
-                
-        # Add Local Machine as default (if frontend needs explicit option)
-        # devices.insert(0, {"id": "local", "name": "Local Computer", "path": "/", "type": "local"})
-        
-        return devices
+        def add_device(device_id: str, name: str, path: Path, device_type: str = "local") -> None:
+            resolved = str(path.resolve())
+            if resolved in seen or not path.exists() or not path.is_dir():
+                return
+            seen.add(resolved)
+            devices.append(
+                {
+                    "id": device_id,
+                    "name": name,
+                    "type": device_type,
+                    "path": resolved,
+                }
+            )
 
-    def _read_mounts(self):
-        mounts = []
-        try:
-            with open('/proc/mounts', 'r') as f:
-                for line in f:
-                    parts = line.split()
-                    if len(parts) >= 3:
-                        device, path, fs = parts[0], parts[1], parts[2]
-                        # Filter out system pseudo-fs
-                        if device.startswith('/') and not path.startswith('/snap'):
-                            mounts.append({'device': device, 'path': path, 'fs': fs})
-        except:
-            pass
-        return mounts
+        home = Path.home()
+        add_device("system:root", "Root", Path("/"))
+        add_device("system:home", "Home", Path("/home"))
+        add_device("system:user-home", home.name or "Usuario", home)
 
-    def get_device_info(self, path):
-        # Reverse lookup path to find device?
-        # For now, just simplistic check
-        devices = self.list_devices()
-        for dev in devices:
-            if path.startswith(dev['path']):
-                return dev
-        return {"id": "local", "type": "local"}
+        for base in (Path("/media"), Path("/run/media")):
+            if not base.exists():
+                continue
+            for path in base.rglob("*"):
+                if path.is_dir():
+                    add_device(f"mnt:{path}", path.name, path, "usb")
+
+        return sorted(
+            devices,
+            key=lambda item: (
+                0 if item["id"] == "system:user-home" else 1 if item["id"] == "system:home" else 2 if item["id"] == "system:root" else 3,
+                item["name"].lower(),
+            ),
+        )

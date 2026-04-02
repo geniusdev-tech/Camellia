@@ -1,89 +1,61 @@
 import os
-import time
-import pyotp
-import qrcode
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
 import jwt
-import base64
-from io import BytesIO
-from typing import Tuple, Optional
-from datetime import datetime, timedelta
+import pyotp
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 
-# Import Crypto Engine for password hashing
-from core.crypto.engine import CryptoEngine
-
-# Secret for signing JWTs (should be loaded from config/env)
-JWT_SECRET = os.getenv('JWT_SECRET', os.getenv('SECRET_KEY', 'dev-secret-change-me'))
-JWT_ALGORITHM = "HS256"
-MFA_ISSUER = "Camellia Shield Enterprise"
 
 class AuthController:
-    def __init__(self, db_session):
-        self.db = db_session
-        self.crypto = CryptoEngine()
-
-    def verify_password(self, password_hash: str, password: str) -> bool:
-        """Verify password against Argon2id hash."""
-        return self.crypto.verify_password(password_hash, password)
+    def __init__(self, db) -> None:
+        self.db = db
+        self._hasher = PasswordHasher()
+        self._secret = os.getenv("SECRET_KEY", "camellia-dev-secret")
 
     def hash_password(self, password: str) -> str:
-        """Hash password using Argon2id."""
-        return self.crypto.hash_password(password)
+        return self._hasher.hash(password)
 
-    # --- MFA Logic ---
-
-    def generate_mfa_secret(self, username: str) -> Tuple[str, str]:
-        """
-        Generates a new TOTP secret and QR Code.
-        Returns: (secret, qr_base64)
-        """
-        secret = pyotp.random_base32()
-        totp = pyotp.TOTP(secret)
-        uri = totp.provisioning_uri(name=username, issuer_name=MFA_ISSUER)
-        
-        # Generate QR Code
-        img = qrcode.make(uri)
-        buffered = BytesIO()
-        img.save(buffered, format="PNG")
-        qr_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-        
-        return secret, qr_b64
-
-    def verify_totp_token(self, secret: str, token: str) -> bool:
-        """Verifies a TOTP token against a secret."""
-        if not secret:
-            return False
-        totp = pyotp.TOTP(secret)
-        return totp.verify(token)
-
-    # --- Session / Token Logic ---
-
-    def create_access_token(self, user_id: int, roles: list) -> str:
-        """Creates a JWT access token."""
-        payload = {
-            "sub": str(user_id),
-            "roles": roles,
-            "iat": datetime.utcnow(),
-            "exp": datetime.utcnow() + timedelta(minutes=60) # Short lived
-        }
-        return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-    def create_refresh_token(self, user_id: int) -> str:
-        """Creates a long-lived refresh token."""
-        payload = {
-            "sub": str(user_id),
-            "type": "refresh",
-            "iat": datetime.utcnow(),
-            "exp": datetime.utcnow() + timedelta(days=7)
-        }
-        return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-    def decode_token(self, token: str) -> Optional[dict]:
-        """Decodes and validates a JWT token."""
+    def verify_password(self, password_hash: str, password: str) -> bool:
         try:
-            return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except jwt.ExpiredSignatureError:
-            print("Token Expired")
-            return None # Expired
-        except jwt.InvalidTokenError as e:
-            print(f"Invalid Token: {e}")
-            return None # Invalid
+            return self._hasher.verify(password_hash, password)
+        except VerifyMismatchError:
+            return False
+        except Exception:
+            return False
+
+    def _encode_token(self, sub: int | str, roles: list[str], token_type: str, minutes: int) -> str:
+        now = datetime.now(timezone.utc)
+        payload: dict[str, Any] = {
+            "sub": str(sub),
+            "roles": roles,
+            "type": token_type,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=minutes)).timestamp()),
+        }
+        return jwt.encode(payload, self._secret, algorithm="HS256")
+
+    def create_access_token(self, sub: int | str, roles: list[str]) -> str:
+        return self._encode_token(sub, roles, "access", 60)
+
+    def create_refresh_token(self, sub: int | str) -> str:
+        return self._encode_token(sub, [], "refresh", 60 * 24 * 7)
+
+    def decode_token(self, token: str) -> dict[str, Any] | None:
+        try:
+            return jwt.decode(token, self._secret, algorithms=["HS256"])
+        except Exception:
+            return None
+
+    def generate_totp_secret(self) -> str:
+        return pyotp.random_base32()
+
+    def build_totp_uri(self, username: str, secret: str) -> str:
+        return pyotp.totp.TOTP(secret).provisioning_uri(name=username, issuer_name="Camellia Shield")
+
+    def verify_totp_token(self, secret: str, code: str) -> bool:
+        try:
+            return pyotp.TOTP(secret).verify(code, valid_window=1)
+        except Exception:
+            return False

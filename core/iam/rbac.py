@@ -2,87 +2,71 @@ from functools import wraps
 from flask import request, jsonify, g
 from core.iam.auth import AuthController
 from core.iam.db import SessionLocal
-import os
 
-# Create a global instance or lazy load?
-# Ideally we inject this. For decorators, we often just instantiate or import singleton.
-# We'll use a helper that creates a fresh session.
 
 def get_auth_controller():
-    session = SessionLocal()
-    return AuthController(session)
+    return AuthController(SessionLocal())
+
 
 def require_auth(f):
     @wraps(f)
-    def decorated_function(*args, **kwargs):
-        auth_header = request.headers.get('Authorization')
-        token = None
-        
-        if auth_header and auth_header.startswith('Bearer '):
-            token = auth_header.split(' ')[1]
-        
-        if not token:
-             return jsonify({'error': 'Token is missing'}), 401
-             
-        controller = get_auth_controller()
-        payload = controller.decode_token(token)
-        
-        if not payload:
-             return jsonify({'error': 'Token is invalid or expired'}), 401
-             
-        # Store user info in g
-        g.user_id = payload['sub']
-        g.user_roles = payload.get('roles', [])
-        
-        return f(*args, **kwargs)
-    return decorated_function
+    def decorated(*args, **kwargs):
+        header = request.headers.get("Authorization", "")
+        token  = header.split(" ")[1] if header.startswith("Bearer ") else None
 
-def require_role(role_name):
+        if not token:
+            return jsonify({"error": "Token ausente"}), 401
+
+        ctrl    = get_auth_controller()
+        payload = ctrl.decode_token(token)
+        if not payload:
+            return jsonify({"error": "Token inválido ou expirado"}), 401
+
+        # Coerce to int so SQLAlchemy .get(User, user_id) works
+        try:
+            g.user_id = int(payload["sub"])
+        except (ValueError, KeyError):
+            g.user_id = payload.get("sub")
+
+        g.user_roles = payload.get("roles", [])
+        return f(*args, **kwargs)
+    return decorated
+
+
+def require_role(role_name: str):
     def decorator(f):
         @wraps(f)
-        def decorated_function(*args, **kwargs):
-            # Ensure auth via require_auth or check here
-            if not hasattr(g, 'user_roles'):
-                 # Try to authenticate if not already done?
-                 # Better to enforce require_auth usage first.
-                 return jsonify({'error': 'Authentication required'}), 401
-            
-            # Simple check: assuming roles is a list of role names in the token
-            # Or we might need to fetch from DB if we want real-time revocation.
-            # For RBAC, typically checking the token claims is faster (stateless),
-            # but for high security (Enterprise), we might want to check DB.
-            # Current implementation puts role names in token for speed.
-            
-            if role_name not in g.user_roles and 'owner' not in g.user_roles:
-                # Owner bypasses or we strictly enforce?
-                # Let's say Owner has all access, but let's be explicit.
-                if 'owner' in g.user_roles:
-                    pass
-                else:
-                    return jsonify({'error': 'Insufficient permissions'}), 403
-            
+        def decorated(*args, **kwargs):
+            if not hasattr(g, "user_roles"):
+                return jsonify({"error": "Autenticação necessária"}), 401
+            if role_name not in g.user_roles and "owner" not in g.user_roles:
+                return jsonify({"error": "Permissões insuficientes"}), 403
             return f(*args, **kwargs)
-        return decorated_function
+        return decorated
     return decorator
 
-def require_permission(permission):
+
+def require_permission(permission: str):
     def decorator(f):
         @wraps(f)
-        def decorated_function(*args, **kwargs):
-            if not hasattr(g, 'user_id'):
-                return jsonify({'error': 'Authentication required'}), 401
-                
-            # For permissions, we likely need to check the DB as they might be granular
-            # and too large for JWT.
-            session = SessionLocal()
+        def decorated(*args, **kwargs):
+            if not hasattr(g, "user_id"):
+                return jsonify({"error": "Autenticação necessária"}), 401
+
+            db = SessionLocal()
             try:
                 from core.iam.models import User
-                user = session.query(User).get(g.user_id)
-                if not user or not user.has_permission(permission):
-                     return jsonify({'error': f'Missing permission: {permission}'}), 403
+                user = db.get(User, g.user_id)
+                if not user:
+                    return jsonify({"error": "Utilizador não encontrado"}), 404
+                # owner bypasses all permission checks
+                if user.role and user.role.name == "owner":
+                    return f(*args, **kwargs)
+                if not user.has_permission(permission):
+                    return jsonify({"error": f"Permissão ausente: {permission}"}), 403
             finally:
-                session.close()
-                
+                db.close()
+
             return f(*args, **kwargs)
-        return decorated_function
+        return decorated
     return decorator

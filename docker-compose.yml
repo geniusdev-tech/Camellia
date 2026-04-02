@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  camellia:
+    build: .
+    container_name: camellia-shield
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY}
+      - KMS_PROVIDER=${KMS_PROVIDER:-file}
+      - AWS_KMS_KEY_ID=${AWS_KMS_KEY_ID:-}
+      - AWS_REGION=${AWS_REGION:-}
+      - AUDIT_LOG_PATH=/data/audit.log
+      - KMS_FILE_PATH=/data/kms.key
+    volumes:
+      - camellia-data:/data
+      - ${HOME}/.camellia:/home/camellia/.camellia
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  camellia-data:

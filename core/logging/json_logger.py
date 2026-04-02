@@ -1,35 +1,33 @@
-import logging
-import os
 import json
-from logging.handlers import HTTPHandler
+import logging
+import sys
+from datetime import datetime, timezone
 
 
-class JSONFormatter(logging.Formatter):
-    def format(self, record):
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "timestamp": self.formatTime(record),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
         }
         if record.exc_info:
-            payload['exc_info'] = self.formatException(record.exc_info)
-        return json.dumps(payload)
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=True)
 
 
-def configure_json_logging(siem_endpoint: str | None = None, level=logging.INFO):
-    logger = logging.getLogger()
-    logger.setLevel(level)
+def configure_json_logging(siem_endpoint: str | None = None) -> None:
+    root = logging.getLogger()
+    if getattr(root, "_camellia_configured", False):
+        return
 
-    handler = logging.StreamHandler()
-    handler.setFormatter(JSONFormatter())
-    logger.addHandler(handler)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonFormatter())
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+    root._camellia_configured = True  # type: ignore[attr-defined]
 
     if siem_endpoint:
-        # siem_endpoint format: host:port
-        host, port = siem_endpoint.split(':')
-        http = HTTPHandler(host, '/ingest', method='POST')
-        http.setFormatter(JSONFormatter())
-        logger.addHandler(http)
-
-    return logger
+        root.info("SIEM logging requested for %s (dev stub)", siem_endpoint)
