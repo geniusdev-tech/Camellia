@@ -4,11 +4,17 @@
  */
 
 let _cachedBase: string | null = null
+const explicitApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || ''
 
 export async function getApiBase(): Promise<string> {
   if (_cachedBase !== null) return _cachedBase
 
   // SSR: always use empty base (Next.js handles rewrites)
+  if (explicitApiBase) {
+    _cachedBase = explicitApiBase.replace(/\/+$/, '')
+    return _cachedBase
+  }
+
   if (typeof window === 'undefined') {
     _cachedBase = ''
     return ''
