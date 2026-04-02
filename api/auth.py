@@ -1,7 +1,7 @@
 """
 Authentication API Blueprint — hardened version
 """
-from flask import Blueprint, request, jsonify, session, g
+from flask import Blueprint, request, jsonify, session, g, current_app
 from core.crypto.engine import CryptoEngine
 from core.iam.db import SessionLocal
 from core.iam.auth import AuthController
@@ -9,6 +9,7 @@ from core.iam.models import User
 from core.iam.rbac import require_auth
 from core.iam.session import key_manager
 from core.audit.logger import get_audit_logger
+from core.kms.manager import wrap_master_key, unwrap_master_key
 import traceback
 import json
 
@@ -38,6 +39,10 @@ def _log_event(event_type, user, severity="INFO", details=None):
         get_audit_logger().log_event(event_type, user=user, severity=severity, details=details or {})
     except Exception:
         pass
+
+
+def _kms_provider():
+    return getattr(current_app, "kms", None)
 
 
 # ── Login ───────────────────────────────────────────────────
@@ -70,11 +75,11 @@ def login():
 
         if user.wrapped_key:
             try:
-                from core.crypto.engine import CryptoEngine
                 wrapped = json.loads(user.wrapped_key)
-
-                master_key = CryptoEngine().unwrap_master_key(
-                    wrapped, password
+                master_key = unwrap_master_key(
+                    wrapped,
+                    password,
+                    kms=_kms_provider(),
                 )
 
             except Exception as e:
@@ -258,7 +263,7 @@ def register():
 
         crypto = CryptoEngine()
         master_key = crypto.generate_master_key()
-        wrapped = crypto.wrap_master_key(master_key, password)
+        wrapped = wrap_master_key(master_key, password, kms=_kms_provider())
 
         user_role = db.query(Role).filter_by(name="user").first()
 

@@ -3,6 +3,9 @@ import json
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
+
+from core.kms.manager import create_runtime_kms, wrap_master_key
 
 
 def _default_db_path() -> str:
@@ -11,8 +14,30 @@ def _default_db_path() -> str:
     return os.path.join(os.getcwd(), "camellia-dev.db")
 
 
-DB_PATH = os.getenv("IAM_DB_PATH", _default_db_path())
-engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+def _resolve_database_url() -> str:
+    database_url = (
+        os.getenv("IAM_DATABASE_URL")
+        or os.getenv("DATABASE_URL")
+        or os.getenv("POSTGRES_URL")
+    )
+    if database_url:
+        if database_url.startswith("postgres://"):
+            return database_url.replace("postgres://", "postgresql+psycopg://", 1)
+        if database_url.startswith("postgresql://") and "+psycopg" not in database_url:
+            return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        return database_url
+    return f"sqlite:///{os.getenv('IAM_DB_PATH', _default_db_path())}"
+
+
+DATABASE_URL = _resolve_database_url()
+ENGINE_KWARGS = {"pool_pre_ping": True}
+
+if DATABASE_URL.startswith("sqlite:///"):
+    ENGINE_KWARGS["connect_args"] = {"check_same_thread": False}
+elif os.getenv("VERCEL"):
+    ENGINE_KWARGS["poolclass"] = NullPool
+
+engine = create_engine(DATABASE_URL, **ENGINE_KWARGS)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
@@ -54,9 +79,11 @@ def init_db() -> None:
 
         admin = db.query(User).filter_by(username=admin_email).first()
         if admin is None:
-            wrapped_key = CryptoEngine().wrap_master_key(
+            kms = create_runtime_kms("/tmp/kms.key" if os.getenv("VERCEL") else os.path.join(os.getcwd(), "kms.key"))
+            wrapped_key = wrap_master_key(
                 CryptoEngine().generate_master_key(),
                 admin_password,
+                kms=kms,
             )
             admin = User(
                 username=admin_email,
@@ -68,10 +95,12 @@ def init_db() -> None:
             db.add(admin)
             db.commit()
         elif not admin.wrapped_key:
+            kms = create_runtime_kms("/tmp/kms.key" if os.getenv("VERCEL") else os.path.join(os.getcwd(), "kms.key"))
             admin.wrapped_key = json.dumps(
-                CryptoEngine().wrap_master_key(
+                wrap_master_key(
                     CryptoEngine().generate_master_key(),
                     admin_password,
+                    kms=kms,
                 )
             )
             db.commit()

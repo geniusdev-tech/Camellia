@@ -130,6 +130,14 @@ Isso permite o boot da aplicação, mas esses dados continuam efêmeros entre ex
 O bootstrap automático de usuário só usa credenciais padrão em desenvolvimento local.
 Em produção/serverless, defina `CAMELLIA_DEV_EMAIL` e `CAMELLIA_DEV_PASSWORD` se quiser criar um usuário inicial automaticamente.
 
+O backend agora usa `DATABASE_URL` ou `POSTGRES_URL` automaticamente quando essas variáveis existem, com SQLAlchemy + `psycopg`.
+
+Para CORS em produção, defina `ALLOWED_ORIGIN` com uma ou mais origens separadas por vírgula.
+Sem isso, a API não responde com `Access-Control-Allow-Origin` em produção.
+
+Para KMS externo, defina `AWS_KMS_KEY_ID` e `AWS_REGION`.
+Na Vercel, o backend não cria mais `kms.key` local por padrão; com AWS configurado, novas master keys passam a ser protegidas por AWS KMS.
+
 ---
 
 ## 📄 Licença

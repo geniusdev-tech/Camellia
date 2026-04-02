@@ -6,7 +6,7 @@ import os
 import secrets
 import logging
 from warnings import filterwarnings
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 
 from config import DevelopmentConfig, ProductionConfig
@@ -18,8 +18,7 @@ load_dotenv()
 
 from core.logging.json_logger import configure_json_logging
 from core.audit.logger import init_audit_logger
-from core.kms.file_kms import FileKMS
-from core.kms.aws_kms import AWSKMSProvider
+from core.kms.manager import create_runtime_kms
 from core.iam.db import init_db
 
 try:
@@ -37,12 +36,18 @@ def _runtime_writable_root() -> str:
     return os.getcwd()
 
 
+def _allowed_origins() -> set[str]:
+    raw = os.getenv("ALLOWED_ORIGIN", "")
+    return {item.strip() for item in raw.split(",") if item.strip()}
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     init_db()
 
     env = os.getenv("FLASK_ENV", "production").lower()
     desktop_mode = os.getenv("DESKTOP_MODE", "0").lower() in ("1", "true", "yes")
+    is_vercel = bool(os.getenv("VERCEL"))
 
     if env == "development":
         app.config.from_object(DevelopmentConfig)
@@ -109,21 +114,9 @@ def create_app() -> Flask:
         pass
 
     # ── KMS ───────────────────────────────────────────
-    kms_provider = os.getenv("KMS_PROVIDER", "file")
-    if kms_provider == "file":
-        kms_path = os.getenv("KMS_FILE_PATH", os.path.join(_runtime_writable_root(), "kms.key"))
-        try:
-            app.kms = FileKMS(kms_path)  # type: ignore[attr-defined]
-        except Exception:
-            app.kms = None  # type: ignore[attr-defined]
-    elif kms_provider == "aws":
-        aws_key_id = os.getenv("AWS_KMS_KEY_ID")
-        aws_region = os.getenv("AWS_REGION")
-        try:
-            app.kms = AWSKMSProvider(aws_key_id, region_name=aws_region) if aws_key_id else None  # type: ignore[attr-defined]
-        except Exception:
-            app.kms = None  # type: ignore[attr-defined]
-    else:
+    try:
+        app.kms = create_runtime_kms(os.path.join(_runtime_writable_root(), "kms.key"))  # type: ignore[attr-defined]
+    except Exception:
         app.kms = None  # type: ignore[attr-defined]
 
     # ── Health-check ──────────────────────────────────
@@ -134,8 +127,17 @@ def create_app() -> Flask:
     # ── CORS headers (Tauri / dev only) ───────────────
     @app.after_request
     def add_cors(response):
-        if desktop_mode or env == "development":
+        origin = request.headers.get("Origin", "").strip()
+        if (desktop_mode or env == "development") and not is_vercel:
             response.headers["Access-Control-Allow-Origin"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            return response
+
+        allowed_origins = _allowed_origins()
+        if origin and origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         return response
