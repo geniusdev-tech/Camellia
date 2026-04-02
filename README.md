@@ -21,7 +21,7 @@
 | **Backend API** | Flask 3 · Python 3.12 |
 | **Criptografia** | AES-256-GCM · XChaCha20-Poly1305 · Argon2id · Ed25519 |
 | **Autenticação** | JWT (RS256) · TOTP 2FA · RBAC |
-| **KMS** | FileKMS (dev) · AWS KMS (prod) |
+| **KMS** | FileKMS (dev) · AWS KMS / Vault Transit (prod) |
 | **Auditoria** | Append-only log assinado Ed25519 |
 
 ---
@@ -135,8 +135,16 @@ O backend agora usa `DATABASE_URL` ou `POSTGRES_URL` automaticamente quando essa
 Para CORS em produção, defina `ALLOWED_ORIGIN` com uma ou mais origens separadas por vírgula.
 Sem isso, a API não responde com `Access-Control-Allow-Origin` em produção.
 
-Para KMS externo, defina `AWS_KMS_KEY_ID` e `AWS_REGION`.
-Na Vercel, o backend não cria mais `kms.key` local por padrão; com AWS configurado, novas master keys passam a ser protegidas por AWS KMS.
+Para AWS KMS, defina `AWS_KMS_KEY_ID` e `AWS_REGION`.
+
+Para Vault Transit, defina:
+- `KMS_PROVIDER=transit`
+- `VAULT_ADDR`
+- `VAULT_TOKEN`
+- `VAULT_TRANSIT_KEY_NAME`
+- opcionalmente `VAULT_TRANSIT_MOUNT` se o mount não for `transit`
+
+Na Vercel, o backend não cria mais `kms.key` local por padrão; com AWS KMS ou Vault Transit configurado, novas master keys passam a ser protegidas externamente.
 
 ---
 
