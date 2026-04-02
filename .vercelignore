@@ -1,0 +1,10 @@
+frontend
+src-tauri
+docs
+node_modules
+.venv
+__pycache__
+tests
+*.db
+*.log
+*.key

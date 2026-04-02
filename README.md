@@ -115,6 +115,20 @@ Coloque um **nginx / Caddy** na frente para TLS. Veja `docs/user-guide/readme.ht
 
 ---
 
+### Backend na Vercel
+
+O backend Flask pode ser publicado na Vercel usando [`app.py`](/home/zeus/Documentos/camellia-shield/app.py) como entrypoint e a configuração em [`vercel.json`](/home/zeus/Documentos/camellia-shield/vercel.json).
+
+```bash
+vercel deploy --prod \
+  -e SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+```
+
+Na Vercel, `audit.log`, `kms.key` e os bancos SQLite padrão passam a usar `/tmp`.
+Isso permite o boot da aplicação, mas esses dados continuam efêmeros entre execuções. Para produção real, use banco externo e KMS externo.
+
+---
+
 ## 📄 Licença
 
 MIT © 2024 Rodrigo Lima

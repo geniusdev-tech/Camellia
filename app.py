@@ -31,6 +31,12 @@ except Exception:
     Talisman = Limiter = get_remote_address = SeaSurf = None  # type: ignore[assignment,misc]
 
 
+def _runtime_writable_root() -> str:
+    if os.getenv("VERCEL"):
+        return "/tmp"
+    return os.getcwd()
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     init_db()
@@ -96,7 +102,7 @@ def create_app() -> Flask:
     siem = os.getenv("SIEM_ENDPOINT")
     configure_json_logging(siem_endpoint=siem)
 
-    audit_path = os.getenv("AUDIT_LOG_PATH", os.path.join(os.getcwd(), "audit.log"))
+    audit_path = os.getenv("AUDIT_LOG_PATH", os.path.join(_runtime_writable_root(), "audit.log"))
     try:
         init_audit_logger(audit_path)
     except Exception:
@@ -105,7 +111,7 @@ def create_app() -> Flask:
     # ── KMS ───────────────────────────────────────────
     kms_provider = os.getenv("KMS_PROVIDER", "file")
     if kms_provider == "file":
-        kms_path = os.getenv("KMS_FILE_PATH", os.path.join(os.getcwd(), "kms.key"))
+        kms_path = os.getenv("KMS_FILE_PATH", os.path.join(_runtime_writable_root(), "kms.key"))
         try:
             app.kms = FileKMS(kms_path)  # type: ignore[attr-defined]
         except Exception:

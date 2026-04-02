@@ -5,7 +5,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 
-DB_PATH = os.getenv("IAM_DB_PATH", os.path.join(os.getcwd(), "camellia-dev.db"))
+def _default_db_path() -> str:
+    if os.getenv("VERCEL"):
+        return "/tmp/camellia-dev.db"
+    return os.path.join(os.getcwd(), "camellia-dev.db")
+
+
+DB_PATH = os.getenv("IAM_DB_PATH", _default_db_path())
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
