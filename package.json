@@ -4,9 +4,13 @@
   "private": true,
   "description": "Repositório visual de projetos e pacotes curados",
   "scripts": {
-    "dev":          "make dev",
-    "dev:tauri":    "make dev-tauri",
-    "build":        "make build",
-    "install:all":  "make install"
+    "dev": "make dev",
+    "dev:tauri": "make dev-tauri",
+    "build": "make build",
+    "install:all": "make install"
+  },
+  "dependencies": {
+    "@emnapi/core": "^1.9.2",
+    "@emnapi/runtime": "^1.9.2"
   }
 }

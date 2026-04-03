@@ -22,11 +22,11 @@ psycopg[binary]>=3.2.0
 requests>=2.32.0
 redis>=5.0.0
 
+# Database migrations
+alembic>=1.10.0
+
 # Sessions
 Flask-Session>=0.4.0
-
-# Env & utils
-python-dotenv>=1.0.1
 
 # Dev / test (install via requirements-dev.txt)
 # pytest bandit safety flake8 argon2-cffi pyinstaller
