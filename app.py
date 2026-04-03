@@ -23,6 +23,18 @@ from core.audit.logger import init_audit_logger
 from core.iam.db import init_db
 
 try:
+    import redis
+except ImportError:  # pragma: no cover - redis optional
+    redis = None  # type: ignore[assignment]
+
+try:
+    from flask_session import Session
+except ImportError:  # pragma: no cover - session optional
+    Session = None  # type: ignore[assignment]
+
+session_extension = Session() if Session is not None else None
+
+try:
     from flask_talisman import Talisman
     from flask_limiter import Limiter
     from flask_limiter.util import get_remote_address
@@ -66,6 +78,22 @@ def create_app() -> Flask:
     else:
         raise RuntimeError("SECRET_KEY environment variable is required in production.")
 
+    # ── Session / Redis helpers ───────────────────────
+    redis_url = os.getenv("REDIS_URL")
+    limiter_storage = os.getenv("LIMITER_STORAGE_URI") or redis_url
+    redis_client = None
+
+    if redis is not None and redis_url:
+        redis_client = redis.from_url(redis_url, decode_responses=True)
+        if session_extension is not None:
+            app.config["SESSION_TYPE"] = "redis"
+            app.config["SESSION_REDIS"] = redis_client
+    elif session_extension is not None:
+        app.config.setdefault("SESSION_TYPE", "filesystem")
+
+    if Session is not None and session_extension is not None:
+        session_extension.init_app(app)
+
     # ── Blueprints ────────────────────────────────────
     from api.auth import auth_bp
     from api.projects import projects_bp, public_packages_bp
@@ -101,11 +129,14 @@ def create_app() -> Flask:
             limits = ["100000 per day", "20000 per hour"]
         else:
             limits = ["2000 per day", "500 per hour"]
-        Limiter(
-            key_func=get_remote_address,
-            app=app,
-            default_limits=limits,
-        )
+        limiter_kwargs: dict[str, object] = {
+            "key_func": get_remote_address,
+            "app": app,
+            "default_limits": limits,
+        }
+        if limiter_storage:
+            limiter_kwargs["storage_uri"] = limiter_storage
+        Limiter(**limiter_kwargs)
 
     if SeaSurf is not None and not desktop_mode and env not in ("development",):
         csrf = SeaSurf(app)

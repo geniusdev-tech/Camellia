@@ -74,6 +74,8 @@ GateStack e uma plataforma de repositório com backend Flask e frontend Next.js/
 | `GATESTACK_ASYNC_WORKER` | ❌ (`1`) | `core.async_jobs.start_async_job_worker()` respeita `0` para desabilitar o worker local. |
 | `GATESTACK_ASYNC_POLL_SECONDS` | ❌ (`0.5`) | Polling interval para o worker assíncrono. |
 | `SESSION_LIFETIME` | ❌ (`300`) | Tempo em segundos para cookies de sessão (`config.py`). |
+| `REDIS_URL` | ❌ | Host Redis para rate limiting e sessões compartilhadas (`redis.from_url`). |
+| `LIMITER_STORAGE_URI` | ❌ | Força o `Flask-Limiter` a usar Redis ou outro storage; cai para `REDIS_URL` se não definido. |
 
 Além das variáveis acima, o desktop precisa encontrar o binário `gatestack-backend` dentro de `src-tauri/binaries/` e ler o log em `/tmp/gatestack-desktop.log` (ou `*-dev.log` em debug).
 

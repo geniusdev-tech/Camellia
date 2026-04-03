@@ -1,0 +1,69 @@
+services:
+  - type: web
+    name: gatestack-backend
+    env: python
+    region: oregon
+    plan: starter
+    branch: main
+    root: /
+    buildCommand: make install && make db-migrate && make bundle-backend && make build
+    startCommand: ./src-tauri/binaries/gatestack-backend
+    envVars:
+      - key: SECRET_KEY
+        value: prj_etPOXKuUlQFmsFBHHrr3X87AlBQh
+      - key: FLASK_ENV
+        value: development
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: PORT
+        value: "5000"
+      - key: HOST
+        value: 127.0.0.1
+      - key: DESKTOP_MODE
+        value: "0"
+      - key: SESSION_COOKIE_SECURE
+        value: "0"
+      - key: SESSION_COOKIE_HTTPONLY
+        value: "1"
+      - key: SESSION_COOKIE_SAMESITE
+        value: Lax
+      - key: PERMANENT_SESSION_LIFETIME
+        value: "300"
+      - key: REDIS_URL
+        value: ""
+      - key: LIMITER_STORAGE_URI
+        value: ""
+      - key: KMS_PROVIDER
+        value: file
+      - key: AUDIT_LOG_PATH
+        value: /tmp/audit.log
+      - key: GATESTACK_ASYNC_WORKER
+        value: "1"
+      - key: GATESTACK_ASYNC_POLL_SECONDS
+        value: "0.5"
+      - key: SESSION_LIFETIME
+        value: "300"
+      - key: SUPABASE_URL
+        value: ""
+      - key: SUPABASE_BUCKET
+        value: ""
+      - key: SUPABASE_SERVICE_KEY
+        value: ""
+      - key: ALLOWED_ORIGIN
+        value: ""
+      - key: SIEM_ENDPOINT
+        value: ""
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gatestack-db
+          property: connectionString
+
+databases:
+  - type: postgres
+    name: gatestack-db
+    plan: starter
+    region: oregon
+    disk: 100
+    username: gatestack
+    password: "{{render-secret}}"
+    database: gatestack
