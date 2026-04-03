@@ -6,30 +6,34 @@ RUN npm ci --frozen-lockfile
 COPY frontend/ ./
 RUN npm run build
 
-# ── Stage 2: Python runtime with shared libs ─────────────────────────────────
-FROM python:3.12-slim-bullseye AS runtime
+# ── Stage 2: Build Node.js backend ──────────────────────────────────────────
+FROM node:20-alpine AS backend-builder
+WORKDIR /app/backend
+COPY backend/package*.json ./
+RUN npm ci
+COPY backend/ ./
+RUN npx prisma generate
+RUN npm run build
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    FLASK_ENV=production \
-    DESKTOP_MODE=0 \
+# ── Stage 3: Runtime ────────────────────────────────────────────────────────
+FROM node:20-alpine AS runtime
+
+ENV NODE_ENV=production \
     PORT=5000
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc build-essential curl && \
-    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy backend
+COPY --from=backend-builder /app/backend/dist ./backend/dist
+COPY --from=backend-builder /app/backend/package*.json ./backend/
+COPY --from=backend-builder /app/backend/node_modules ./backend/node_modules
+COPY --from=backend-builder /app/backend/prisma ./backend/prisma
 
-COPY --chown=root:root . .
-
+# Copy frontend
 COPY --from=frontend-builder /app/frontend/out ./static/dist
 
-RUN python scripts/init_iam_db.py || true
-
+WORKDIR /app/backend
 EXPOSE 5000
 
-CMD ["./scripts/start-server.sh"]
+# Run prisma db push and init-db before starting the server
+CMD ["sh", "-c", "npx prisma db push && npm run db:init && node dist/index.js"]

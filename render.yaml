@@ -6,6 +6,9 @@ services:
     plan: starter
     branch: main
     dockerfile: Dockerfile
+    # Fallback to python environment if docker is not used
+    buildCommand: "make install && make db-migrate && make build-web"
+    startCommand: "./scripts/start-server.sh"
     envVars:
       - key: SECRET_KEY
         generateValue: true

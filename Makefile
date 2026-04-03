@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────
 #  GateStack — Build Automation
 # ─────────────────────────────────────────────────────
-.PHONY: help dev build build-win build-mac build-linux \
+.PHONY: help dev build build-win build-mac build-linux build-web \
         install install-py install-node \
         bundle-backend db-migrate db-revision clean
 
@@ -76,6 +76,10 @@ dev-tauri:
 
 # ── Bundle Python backend → single binary ─────────────
 bundle-backend:
+	@if [ -n "$$RENDER" ]; then \
+		echo "→ Skipping PyInstaller bundle on Render (web mode)…"; \
+		exit 0; \
+	fi
 	@echo "→ Empacotando backend Python com PyInstaller…"
 	$(PYTHON) -m PyInstaller \
 	    --onefile \
@@ -104,6 +108,13 @@ db-revision:
 
 # ── Tauri build helpers ────────────────────────────────
 _tauri-build-prep: bundle-backend
+
+build-web:
+	@echo "→ Building web production assets…"
+	cd frontend && $(NPM) run build
+	rm -rf static/dist && mkdir -p static/dist
+	cp -r frontend/out/* static/dist/
+	@echo "✓ Web assets ready in static/dist."
 
 build: _tauri-build-prep
 	$(TAURI) build --config src-tauri/tauri.conf.json

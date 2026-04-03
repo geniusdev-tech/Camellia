@@ -1,0 +1,246 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id               Int                   @id @default(autoincrement())
+  username         String                @unique
+  passwordHash     String                @map("password_hash")
+  wrappedKey       String?               @map("wrapped_key")
+  mfaSecretEnc     String?               @map("mfa_secret_enc")
+  isActive         Boolean               @default(true) @map("is_active")
+  roleId           Int?                  @map("role_id")
+  role             Role?                 @relation(fields: [roleId], references: [id])
+  refreshSessions  RefreshTokenSession[]
+  ownedTeams       Team[]                @relation("TeamOwner")
+  teamMemberships  TeamMember[]
+  projects         ProjectUpload[]       @relation("ProjectAuthor")
+  reviewedProjects ProjectUpload[]       @relation("ProjectReviewer")
+  statusEvents     ProjectStatusEvent[]
+  shareGrants      ProjectShareGrant[]
+  asyncJobs        AsyncJob[]
+  requestedWorkflows WorkflowApproval[]  @relation("WorkflowRequester")
+  approvedWorkflows  WorkflowApproval[]  @relation("WorkflowApprover")
+
+  @@map("users")
+}
+
+model RefreshTokenSession {
+  id            String    @id @default(uuid())
+  userId        Int       @map("user_id")
+  tokenJti      String    @unique @map("token_jti")
+  tokenType     String    @default("refresh") @map("token_type")
+  issuedAt      String    @map("issued_at")
+  expiresAt     String    @map("expires_at")
+  revokedAt     String?   @map("revoked_at")
+  replacedByJti String?   @map("replaced_by_jti")
+  userAgent     String?   @map("user_agent")
+  ipAddress     String?   @map("ip_address")
+  user          User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([tokenJti])
+  @@map("refresh_token_sessions")
+}
+
+model Team {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  ownerUserId Int          @map("owner_user_id")
+  createdAt   String       @map("created_at")
+  owner       User         @relation("TeamOwner", fields: [ownerUserId], references: [id])
+  members     TeamMember[]
+  invites     ShareInvite[]
+  projectGrants ProjectTeamGrant[]
+
+  @@index([ownerUserId])
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String   @map("team_id")
+  userId    Int      @map("user_id")
+  role      String   @default("member")
+  createdAt String   @map("created_at")
+  team      Team     @relation(fields: [teamId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([teamId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+model ShareInvite {
+  id         String   @id @default(uuid())
+  teamId     String   @map("team_id")
+  email      String
+  token      String   @unique
+  role       String   @default("member")
+  expiresAt  String?  @map("expires_at")
+  acceptedAt String?  @map("accepted_at")
+  createdAt  String   @map("created_at")
+  team       Team     @relation(fields: [teamId], references: [id])
+
+  @@index([teamId])
+  @@index([email])
+  @@index([token])
+  @@map("share_invites")
+}
+
+model ProjectUpload {
+  id                    String               @id @default(uuid())
+  userId                Int                  @map("user_id")
+  packageName           String               @default("default-package") @map("package_name")
+  packageVersion        String               @default("1.0.0") @map("package_version")
+  filename              String
+  description           String?
+  changelog             String?
+  contentType           String?              @map("content_type")
+  sizeBytes             Int                  @map("size_bytes")
+  checksumSha256        String               @default("") @map("checksum_sha256")
+  storageKey            String               @map("storage_key")
+  bucket                String               @default("")
+  visibility            String               @default("private")
+  lifecycleStatus       String               @default("pending") @map("lifecycle_status")
+  statusReason          String?              @map("status_reason")
+  isLatest              Boolean              @default(false) @map("is_latest")
+  ciStatus              String?              @map("ci_status")
+  ciLastEvent           String?              @map("ci_last_event")
+  ciUpdatedAt           String?              @map("ci_updated_at")
+  sharedWith            String?              @map("shared_with")
+  metadataJson          String?              @map("metadata_json")
+  zipEntryCount         Int                  @default(0) @map("zip_entry_count")
+  uncompressedSizeBytes Int                  @default(0) @map("uncompressed_size_bytes")
+  duplicateOfId         String?              @map("duplicate_of_id")
+  downloadCount         Int                  @default(0) @map("download_count")
+  reviewedBy            Int?                 @map("reviewed_by")
+  reviewedAt            String?              @map("reviewed_at")
+  submittedAt           String?              @map("submitted_at")
+  approvedAt            String?              @map("approved_at")
+  publishedAt           String?              @map("published_at")
+  archivedAt            String?              @map("archived_at")
+  rejectedAt            String?              @map("rejected_at")
+  createdAt             String               @map("created_at")
+  user                  User                 @relation("ProjectAuthor", fields: [userId], references: [id])
+  reviewer              User?                @relation("ProjectReviewer", fields: [reviewedBy], references: [id])
+  statusEvents          ProjectStatusEvent[]
+  shareGrants           ProjectShareGrant[]
+  teamGrants            ProjectTeamGrant[]
+  asyncJobs             AsyncJob[]
+  workflowApprovals     WorkflowApproval[]
+
+  @@index([userId])
+  @@index([packageName])
+  @@index([packageVersion])
+  @@index([checksumSha256])
+  @@index([lifecycleStatus])
+  @@index([isLatest])
+  @@map("project_uploads")
+}
+
+model ProjectStatusEvent {
+  id          String        @id @default(uuid())
+  projectId   String        @map("project_id")
+  actorUserId Int           @map("actor_user_id")
+  fromStatus  String?       @map("from_status")
+  toStatus    String        @map("to_status")
+  reason      String?
+  createdAt   String        @map("created_at")
+  project     ProjectUpload @relation(fields: [projectId], references: [id])
+  actor       User          @relation(fields: [actorUserId], references: [id])
+
+  @@index([projectId])
+  @@index([actorUserId])
+  @@map("project_status_events")
+}
+
+model ProjectShareGrant {
+  id            String        @id @default(uuid())
+  projectId     String        @map("project_id")
+  granteeUserId Int           @map("grantee_user_id")
+  grantRole     String        @default("viewer") @map("grant_role")
+  expiresAt     String?       @map("expires_at")
+  createdAt     String        @map("created_at")
+  project       ProjectUpload @relation(fields: [projectId], references: [id])
+  grantee       User          @relation(fields: [granteeUserId], references: [id])
+
+  @@index([projectId])
+  @@index([granteeUserId])
+  @@map("project_share_grants")
+}
+
+model ProjectTeamGrant {
+  id        String        @id @default(uuid())
+  projectId String        @map("project_id")
+  teamId    String        @map("team_id")
+  grantRole String        @default("viewer") @map("grant_role")
+  expiresAt String?       @map("expires_at")
+  createdAt String        @map("created_at")
+  project   ProjectUpload @relation(fields: [projectId], references: [id])
+  team      Team          @relation(fields: [teamId], references: [id])
+
+  @@index([projectId])
+  @@index([teamId])
+  @@map("project_team_grants")
+}
+
+model AsyncJob {
+  id              String         @id @default(uuid())
+  jobType         String         @map("job_type")
+  status          String         @default("queued")
+  priority        Int            @default(100)
+  payloadJson     String         @default("{}") @map("payload_json")
+  resultJson      String?        @map("result_json")
+  errorMessage    String?        @map("error_message")
+  attempts        Int            @default(0)
+  projectId       String?        @map("project_id")
+  createdByUserId Int?           @map("created_by_user_id")
+  startedAt       String?        @map("started_at")
+  finishedAt      String?        @map("finished_at")
+  createdAt       String         @map("created_at")
+  project         ProjectUpload? @relation(fields: [projectId], references: [id])
+  creator         User?          @relation(fields: [createdByUserId], references: [id])
+
+  @@index([jobType])
+  @@index([status])
+  @@index([projectId])
+  @@index([createdByUserId])
+  @@map("async_jobs")
+}
+
+model WorkflowApproval {
+  id           String        @id @default(uuid())
+  projectId    String        @map("project_id")
+  requestedBy  Int           @map("requested_by")
+  status       String        @default("pending")
+  requiredRole String        @default("owner") @map("required_role")
+  reason       String?
+  notes        String?
+  approvedBy   Int?          @map("approved_by")
+  createdAt    String        @map("created_at")
+  decidedAt    String?       @map("decided_at")
+  project      ProjectUpload @relation(fields: [projectId], references: [id])
+  requester    User          @relation("WorkflowRequester", fields: [requestedBy], references: [id])
+  approver     User?         @relation("WorkflowApprover", fields: [approvedBy], references: [id])
+
+  @@index([projectId])
+  @@index([requestedBy])
+  @@index([status])
+  @@map("workflow_approvals")
+}
