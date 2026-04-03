@@ -1,32 +1,30 @@
 services:
   - type: web
-    name: gatestack-backend
-    env: python
+    name: gatestack
+    env: docker
     region: oregon
     plan: starter
     branch: main
-    root: /
-    buildCommand: make install && make db-migrate
-    startCommand: ./scripts/start-server.sh
+    dockerfile: Dockerfile
     envVars:
       - key: SECRET_KEY
-        value: prj_etPOXKuUlQFmsFBHHrr3X87AlBQh
+        generateValue: true
       - key: FLASK_ENV
-        value: development
+        value: production
       - key: FLASK_DEBUG
         value: "0"
       - key: PORT
         value: "5000"
       - key: HOST
-        value: 127.0.0.1
+        value: 0.0.0.0
       - key: DESKTOP_MODE
         value: "0"
       - key: SESSION_COOKIE_SECURE
-        value: "0"
+        value: "1"
       - key: SESSION_COOKIE_HTTPONLY
         value: "1"
       - key: SESSION_COOKIE_SAMESITE
-        value: Lax
+        value: Strict
       - key: PERMANENT_SESSION_LIFETIME
         value: "300"
       - key: REDIS_URL
@@ -44,15 +42,11 @@ services:
       - key: SESSION_LIFETIME
         value: "300"
       - key: SUPABASE_URL
-        value: ""
+        sync: false
       - key: SUPABASE_BUCKET
-        value: ""
+        sync: false
       - key: SUPABASE_SERVICE_KEY
-        value: ""
-      - key: ALLOWED_ORIGIN
-        value: ""
-      - key: SIEM_ENDPOINT
-        value: ""
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: gatestack-db
@@ -63,7 +57,6 @@ databases:
     name: gatestack-db
     plan: starter
     region: oregon
-    disk: 100
+    disk: 10
     username: gatestack
-    password: "{{render-secret}}"
     database: gatestack
