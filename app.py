@@ -6,7 +6,7 @@ import os
 import secrets
 import logging
 from warnings import filterwarnings
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from dotenv import load_dotenv
 
 from config import DevelopmentConfig, ProductionConfig
@@ -55,7 +55,11 @@ def _allowed_origins() -> set[str]:
 
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        static_folder="static/dist",
+        static_url_path="/"
+    )
     init_db()
     install_request_observability(app)
 
@@ -182,6 +186,31 @@ def create_app() -> Flask:
     def options_handler(path):
         return "", 204
 
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def serve_frontend(path):
+        # Prevent infinite recursion for API paths
+        if path.startswith("api/"):
+            return jsonify({"error": "Not Found"}), 404
+
+        # If the exact file exists, serve it
+        if path and os.path.exists(os.path.join(app.static_folder, path)):
+            return send_from_directory(app.static_folder, path)
+
+        # Next.js trailingSlash: true support
+        # e.g. /dashboard/ -> static/dist/dashboard/index.html
+        if path and path.endswith("/"):
+            potential_index = os.path.join(app.static_folder, path, "index.html")
+            if os.path.exists(potential_index):
+                return send_from_directory(os.path.join(app.static_folder, path), "index.html")
+
+        # Fallback to root index.html for client-side routing
+        # Check if index.html exists to avoid 500 error if frontend not built yet
+        if os.path.exists(os.path.join(app.static_folder, "index.html")):
+            return send_from_directory(app.static_folder, "index.html")
+
+        return jsonify({"error": "Frontend not found. Ensure 'npm run build' was executed."}), 404
+
     start_async_job_worker()
 
     return app
@@ -192,5 +221,6 @@ app = create_app()
 if __name__ == "__main__":
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     port  = int(os.getenv("PORT", 5000))
-    host  = os.getenv("HOST", "127.0.0.1")  # Bind only localhost by default
+    # In production, bind to all interfaces
+    host  = os.getenv("HOST", "0.0.0.0" if os.getenv("FLASK_ENV") == "production" else "127.0.0.1")
     app.run(host=host, port=port, debug=debug)
