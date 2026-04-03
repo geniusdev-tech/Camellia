@@ -7,7 +7,8 @@
     "dev": "make dev",
     "dev:tauri": "make dev-tauri",
     "build": "make build-web",
-    "install:all": "make install"
+    "install:all": "make install",
+    "db:migrate": "make db-migrate"
   },
   "dependencies": {
     "@emnapi/core": "^1.9.2",

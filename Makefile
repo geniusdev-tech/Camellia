@@ -76,7 +76,7 @@ dev-tauri:
 
 # ── Bundle Python backend → single binary ─────────────
 bundle-backend:
-	@if [ -n "$(RENDER)" ]; then \
+	@if [ -n "$$RENDER" ]; then \
 		echo "→ Skipping PyInstaller bundle on Render (web mode)…"; \
 		exit 0; \
 	fi
@@ -112,7 +112,7 @@ _tauri-build-prep: bundle-backend
 build-web:
 	@echo "→ Building web production assets…"
 	cd frontend && $(NPM) run build
-	mkdir -p static/dist
+	rm -rf static/dist && mkdir -p static/dist
 	cp -r frontend/out/* static/dist/
 	@echo "✓ Web assets ready in static/dist."
 
