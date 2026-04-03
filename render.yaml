@@ -6,8 +6,8 @@ services:
     plan: starter
     branch: main
     root: /
-    buildCommand: make install && make db-migrate && make bundle-backend && make build
-    startCommand: ./src-tauri/binaries/gatestack-backend
+    buildCommand: make install && make db-migrate
+    startCommand: ./scripts/start-server.sh
     envVars:
       - key: SECRET_KEY
         value: prj_etPOXKuUlQFmsFBHHrr3X87AlBQh

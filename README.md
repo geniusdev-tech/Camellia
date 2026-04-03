@@ -133,6 +133,8 @@ make bundle-backend
 make build
 ```
 
+No Render (ou em qualquer deploy onde PyInstaller falha porque o Python não foi compilado com `--enable-shared`) Ignore o bundle e use `./scripts/start-server.sh` (gunicorn) definido no `render.yaml`. O backend roda diretamente o Flask, enquanto o empacotamento continua sendo usado apenas para lançamentos desktop.
+
 Comandos úteis:
 
 - `make bundle-backend`: gera o binário Python em `src-tauri/binaries/`
