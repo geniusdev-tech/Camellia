@@ -1,0 +1,36 @@
+app = "gatestack"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  FLASK_ENV = "production"
+  DESKTOP_MODE = "0"
+  PORT = "5000"
+  GATESTACK_ASYNC_WORKER = "1"
+  GATESTACK_ASYNC_POLL_SECONDS = "0.5"
+  SESSION_LIFETIME = "300"
+
+[[services]]
+  internal_port = 5000
+  protocol = "tcp"
+
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+
+  [[services.ports]]
+    port = 80
+
+  [[services.ports]]
+    port = 443
+
+  [services.http_checks]
+    interval = "10s"
+    method = "get"
+    path = "/health"
+    timeout = "2s"
+    grace_period = "30s"
+
+[experimental]
+  allowed_public_ports = [80, 443]
