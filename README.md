@@ -135,9 +135,26 @@ make build
 
 No Render (ou em qualquer deploy onde PyInstaller falha porque o Python não foi compilado com `--enable-shared`) Ignore o bundle e use `./scripts/start-server.sh` (gunicorn) definido no `render.yaml`. O backend roda diretamente o Flask, enquanto o empacotamento continua sendo usado apenas para lançamentos desktop.
 
-Comandos úteis:
-
 - `make bundle-backend`: gera o binário Python em `src-tauri/binaries/`
+- `make build`: build desktop Tauri
+- `make db-migrate`: aplica migrações Alembic
+- `make db-revision MSG="descricao"`: cria revisão nova
+
+### Deploy com Fly.io
+
+Para quem quer controlar o runtime completo (Python com biblioteca compartilhada) e rodar o frontend/backend no mesmo container, o `Dockerfile` deste repositório já é compatível com [Fly.io](https://fly.io). Ele:
+
+1. Usa `node:20-alpine` para compilar o Next.js (`npm ci`, `npm run build`).  
+2. Baseia o runtime em `python:3.12-slim-bullseye` com `libpq`, `alembic`, `gunicorn` e `redis`.  
+3. Copia a saída `frontend/out` para `static/dist` e executa `./scripts/start-server.sh` para subir `gunicorn app:app --bind 0.0.0.0:$PORT`.
+
+Passos rápidos:
+
+a. Instale o CLI (`curl -L https://fly.io/install.sh | sh`), faça login (`flyctl auth login`) e crie o app (`flyctl launch`).  
+b. Configure secrets no Fly (`flyctl secrets set SECRET_KEY=... DATABASE_URL=... SUPABASE_BUCKET=... REDIS_URL=...`).  
+c. Deploy: `flyctl deploy --config fly.toml`.
+
+O mesmo container pode ser usado para os jobs (`flyctl scale memory`/`flyctl scale count`) e o banco PostgreSQL/Redis pode ficar dentro da infraestrutura da Fly ou ser apontado para Supabase/Neon.
 - `make build`: build desktop Tauri
 - `make db-migrate`: aplica migrações Alembic
 - `make db-revision MSG="descricao"`: cria revisão nova
