@@ -12,7 +12,7 @@ echo "Checking git status for frontend..."
 git status -sb
 
 echo "Showing diff for package-lock.json"
-git diff -- package-lock.json
+git -c core.pager=cat diff -- package-lock.json
 
 echo "Adding package-lock.json to staging..."
 git add package-lock.json
