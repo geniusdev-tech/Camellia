@@ -1,178 +1,239 @@
-<h1 align="center">🛡️ Camellia Shield</h1>
-<h4 align="center">Hardened Secure Local Workspace — AES-256-GCM · Argon2id · Ed25519</h4>
+# GateStack
 
-<p align="center">
-  <a href="#-stack">Stack</a> •
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-build">Build</a> •
-  <a href="#-security">Security</a> •
-  <a href="#-deploy">Deploy</a>
-</p>
+GateStack e uma plataforma de repositório com backend Flask e frontend Next.js/Tauri. O produto hoje cobre autenticação, MFA, auditoria, workflow de releases, ACL por usuário e por time, jobs assíncronos, métricas operacionais e catálogo público de pacotes.
 
----
+## O que o projeto entrega hoje
 
-## 🏗 Stack
+- autenticação com email/senha, MFA TOTP, refresh rotativo e logout global
+- upload de pacotes `.zip` com checksum, validação estrutural, deduplicação e metadata
+- workflow formal de release: `draft`, `submitted`, `approved`, `published`, `archived`, `rejected`
+- compartilhamento por usuário e por time
+- convites de time
+- signed URLs para download interno e público
+- jobs assíncronos para scan e publish
+- métricas por rota e `request_id`
+- auditoria de eventos
+- frontend organizado por domínio: repositório, times, operações, catálogo e conta
+- shell desktop com Tauri
 
-| Camada | Tecnologia |
-|--------|-----------|
-| **Desktop shell** | Tauri 2 (Rust) |
-| **Frontend** | Next.js 14 · TypeScript · Tailwind CSS · Framer Motion |
-| **Estado** | Zustand · TanStack Query |
-| **Backend API** | Flask 3 · Python 3.12 |
-| **Criptografia** | AES-256-GCM · XChaCha20-Poly1305 · Argon2id · Ed25519 |
-| **Autenticação** | JWT (RS256) · TOTP 2FA · RBAC |
-| **KMS** | FileKMS (dev) · Env KMS / AWS KMS / Vault Transit (prod) |
-| **Auditoria** | Append-only log assinado Ed25519 |
+## Arquitetura
 
----
+### Backend
 
-## 🚀 Quick Start (Desenvolvimento)
+- [app.py](/home/zeus/Documentos/camellia-shield/app.py): bootstrap Flask
+- [api/auth.py](/home/zeus/Documentos/camellia-shield/api/auth.py): login, MFA, refresh, logout
+- [api/projects.py](/home/zeus/Documentos/camellia-shield/api/projects.py): repositório, workflow e API pública
+- [api/access.py](/home/zeus/Documentos/camellia-shield/api/access.py): times, convites e grants
+- [api/ops.py](/home/zeus/Documentos/camellia-shield/api/ops.py): jobs e métricas
+- [core/iam/models.py](/home/zeus/Documentos/camellia-shield/core/iam/models.py): modelos principais
+- [core/async_jobs.py](/home/zeus/Documentos/camellia-shield/core/async_jobs.py): worker local
+- [core/observability.py](/home/zeus/Documentos/camellia-shield/core/observability.py): métricas e headers
+
+### Frontend
+
+- [frontend/src/app/(app)/dashboard/page.tsx](/home/zeus/Documentos/camellia-shield/frontend/src/app/(app)/dashboard/page.tsx): overview
+- [frontend/src/app/(app)/repository/page.tsx](/home/zeus/Documentos/camellia-shield/frontend/src/app/(app)/repository/page.tsx): lista e upload
+- [frontend/src/app/(app)/repository/[projectId]/page.tsx](/home/zeus/Documentos/camellia-shield/frontend/src/app/(app)/repository/[projectId]/page.tsx): detalhe profundo do release
+- [frontend/src/app/(app)/teams/page.tsx](/home/zeus/Documentos/camellia-shield/frontend/src/app/(app)/teams/page.tsx): times, convites e grants
+- [frontend/src/app/(app)/ops/page.tsx](/home/zeus/Documentos/camellia-shield/frontend/src/app/(app)/ops/page.tsx): jobs e métricas
+- [frontend/src/app/(app)/catalog/page.tsx](/home/zeus/Documentos/camellia-shield/frontend/src/app/(app)/catalog/page.tsx): catálogo público
+- [frontend/src/app/(app)/settings/page.tsx](/home/zeus/Documentos/camellia-shield/frontend/src/app/(app)/settings/page.tsx): conta, MFA e auditoria
+
+## Pré-requisitos
+
+- Python 3.12+ (o backend Flask e o empacotamento com `PyInstaller` rodam dentro de `python -m venv .venv`)
+- Node 20+ com `npm`/`npx` (Next.js + Tauri WebView)
+- Rust toolchain **stable** com `cargo` e `rustup` (necessário para Tauri dev/build e `npx --prefix frontend tauri`)
+- Tauri CLI (`@tauri-apps/cli`) disponível globalmente ou via `npx --prefix frontend tauri`
+- Projeto Supabase com bucket configurado para armazenamento de uploads (`SUPABASE_URL`, `SUPABASE_BUCKET`, `SUPABASE_SERVICE_KEY`)
+
+### Configuração local recomendada
+
+1. `python3 -m venv .venv` e, sempre que for trabalhar, rode `source .venv/bin/activate`.
+2. `make install` (ou `make install-py && cd frontend && npm ci`) instala Python, Node e dependências Rust necessárias para builds.
+3. `make dev` sobe o Flask e o Next.js side-by-side; o `trap cleanup` no Makefile garante que o backend seja finalizado junto com o `npm run dev`.
+4. `make dev-tauri` roda Flask + Tauri dev server; ele também usa um `trap` para evitar processos órfãos quando você abortar o comando.
+5. Para builds do desktop use `make bundle-backend` (PyInstaller) seguido de `make build` (Tauri + Next estático). Garanta que o `rustup` esteja apontado para `stable` e que o target desejado esteja instalado (`rustup target add x86_64-unknown-linux-gnu`, por exemplo).
+
+### Variáveis de ambiente obrigatórias e convenções
+
+| Variável | Obrigatória | Notas |
+| --- | --- | --- |
+| `SECRET_KEY` | ✅ em produção | Chave do Flask/JWT. Em dev/desktop é gerada automaticamente (`app.py`). |
+| `DATABASE_URL`, `IAM_DATABASE_URL` ou `POSTGRES_URL` | ✅ em ambientes externos | Define o banco SQLAlchemy. Sem um valor usa `sqlite:///gatestack-dev.db`. |
+| `IAM_DB_PATH` | ❌ | Override para o arquivo SQLite/local. |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET` | ✅ | Usado por `api/projects.upload` e `utils/supabase_storage.py`. |
+| `GATESTACK_DEV_EMAIL` / `GATESTACK_DEV_PASSWORD` | ✅ no dev | Semente um owner local se o DB não tem admin. Dev padrão (sem env) funciona apenas em `FLASK_ENV=development` fora de ambientes serverless. |
+| `PORT` | ❌ (default 5000) | Porta do Flask; o desktop escolhe automaticamente quando não definido. |
+| `HOST` | ❌ (default 127.0.0.1) | Bind do Flask (`app.run`). |
+| `FLASK_ENV`, `FLASK_DEBUG` | ❌ | Controle comportamento (debug, recursos de segurança e CSRF). |
+| `DESKTOP_MODE` | ❌ | Define recursos liberados para o Tauri bundle. É marcado como `1` pelo runtime desktop. |
+| `ALLOWED_ORIGIN` | ❌ (necessário fora de Tauri/dev) | Lista separada por vírgula usada pelo middleware CORS. |
+| `AUDIT_LOG_PATH` | ❌ (`./audit.log`) | Caminho do log de auditoria escrito por `core.audit.logger`. |
+| `SIEM_ENDPOINT` | ❌ | Endpoint externo para `configure_json_logging`. |
+| `GATESTACK_ASYNC_WORKER` | ❌ (`1`) | `core.async_jobs.start_async_job_worker()` respeita `0` para desabilitar o worker local. |
+| `GATESTACK_ASYNC_POLL_SECONDS` | ❌ (`0.5`) | Polling interval para o worker assíncrono. |
+| `SESSION_LIFETIME` | ❌ (`300`) | Tempo em segundos para cookies de sessão (`config.py`). |
+
+Além das variáveis acima, o desktop precisa encontrar o binário `gatestack-backend` dentro de `src-tauri/binaries/` e ler o log em `/tmp/gatestack-desktop.log` (ou `*-dev.log` em debug).
+
+## Instalação
 
 ```bash
-# 1. Clone e configure ambiente Python
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+make install
+```
 
-# 2. Configure variáveis de ambiente
-cp .env.example .env
-# Edite .env: defina SECRET_KEY
+## Desenvolvimento
 
-# 3. Inicialise banco IAM e usuário admin
-python scripts/init_iam_db.py
+### Stack web local
 
-# 4. Instale dependências Node
-cd frontend && npm install && cd ..
-
-# 5. Inicie Flask + Next.js lado a lado
+```bash
 make dev
-# Flask: http://localhost:5000
-# Next:  http://localhost:3000
+```
 
-# 6. Ou inicie dentro do Tauri (janela nativa)
+Isso sobe:
+
+- backend Flask em `http://127.0.0.1:5000`
+- frontend Next em `http://127.0.0.1:3000`
+
+### Desktop
+
+```bash
 make dev-tauri
 ```
 
----
+Isso sobe:
 
-## 📦 Build
+- backend Flask
+- frontend Next
+- shell Tauri usando [src-tauri/tauri.conf.json](/home/zeus/Documentos/camellia-shield/src-tauri/tauri.conf.json)
 
-### Desktop (executável nativo)
+### Frontend isolado
 
 ```bash
-# Todas as dependências
-make install
+cd frontend
+npm run dev
+```
 
-# Gerar executável backend + app Tauri para o SO atual
+### Backend isolado
+
+```bash
+source .venv/bin/activate
+python app.py
+```
+
+## Build e empacotamento
+
+```bash
+make bundle-backend
 make build
-
-# Targets específicos
-make build-linux    # .deb + .rpm + .AppImage
-make build-win      # .msi + .exe  (requer MSVC cross-compiler)
-make build-mac      # .dmg universal (Apple Silicon + Intel)
 ```
 
-Os artefatos ficam em `src-tauri/target/<target>/release/bundle/`.  
-Junto com cada instalador, o build copia os **guias do usuário** em `docs/user-guide/`.
+Comandos úteis:
 
-### Servidor headless (Docker)
+- `make bundle-backend`: gera o binário Python em `src-tauri/binaries/`
+- `make build`: build desktop Tauri
+- `make db-migrate`: aplica migrações Alembic
+- `make db-revision MSG="descricao"`: cria revisão nova
+
+## Testes e validações
+
+### Backend
 
 ```bash
-docker compose up --build
-# API disponível em http://localhost:5000
+source .venv/bin/activate
+python -m compileall app.py api core utils tests
+pytest -q tests/test_repository_api.py
 ```
 
----
-
-## 🔒 Arquitetura de Segurança
-
-```
-Senha ──► Argon2id ──► KEK
-                          └──► AES-GCM(decrypt) ──► Chave Mestra (só em RAM)
-                                                          └──► HKDF ──► Subchave por arquivo
-                                                                            └──► AES-256-GCM / XChaCha20
-```
-
-- **Manifesto do cofre** cifrado (Fernet) + assinado digitalmente (Ed25519)  
-- **Log de auditoria** tamper-evident — cada entrada encadeada por hash e assinada  
-- **Panic Wipe** — zera chaves da memória ao menor sinal de comprometimento  
-- **Deep Integrity Inspection** — verifica magic bytes, entropia Shannon, SHA-256 + BLAKE2b  
-
----
-
-## 🌐 Deploy em Produção
+### Frontend
 
 ```bash
-# Variáveis mínimas obrigatórias
-SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-KMS_PROVIDER=aws
-AWS_KMS_KEY_ID=arn:aws:kms:us-east-1:123456789:key/...
-
-# Com Docker Compose
-docker compose up -d
+cd frontend
+npm run type-check
+npm test
+npm run test:e2e
 ```
 
-Coloque um **nginx / Caddy** na frente para TLS. Veja `docs/user-guide/readme.html` para o guia completo.
+Observação:
 
----
+- `npm test` roda Vitest
+- `npm run test:e2e` usa Playwright e depende do ambiente de browser estar pronto
 
-### Backend na Vercel
+## Fluxos suportados
 
-O backend Flask pode ser publicado na Vercel usando [`app.py`](/home/zeus/Documentos/camellia-shield/app.py) como entrypoint e a configuração em [`vercel.json`](/home/zeus/Documentos/camellia-shield/vercel.json).
+### Repositório
 
-```bash
-vercel deploy --prod \
-  -e SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
-```
+- upload de `.zip`
+- checksum SHA-256
+- deduplicação
+- metadata e changelog
+- workflow de status
+- histórico de transições
+- version matrix
+- signed download
 
-Na Vercel, `audit.log`, `kms.key` e os bancos SQLite padrão passam a usar `/tmp`.
-Isso permite o boot da aplicação, mas esses dados continuam efêmeros entre execuções. Para produção real, use banco externo e KMS externo.
+### Compartilhamento
 
-O bootstrap automático de usuário só usa credenciais padrão em desenvolvimento local.
-Em produção/serverless, defina `CAMELLIA_DEV_EMAIL` e `CAMELLIA_DEV_PASSWORD` se quiser criar um usuário inicial automaticamente.
+- grants por usuário
+- grants por time
+- convites de time
+- acesso público, privado e compartilhado
 
-O backend agora usa `DATABASE_URL` ou `POSTGRES_URL` automaticamente quando essas variáveis existem, com SQLAlchemy + `psycopg`.
+### Operações
 
-Para CORS em produção, defina `ALLOWED_ORIGIN` com uma ou mais origens separadas por vírgula.
-Sem isso, a API não responde com `Access-Control-Allow-Origin` em produção.
+- enfileirar scan
+- enfileirar publish async
+- listar jobs
+- ver métricas por rota
 
-Para a alternativa mais simples, defina:
-- `KMS_PROVIDER=env`
-- `MASTER_KEY_ENCRYPTION_KEY`
+### Catálogo público
 
-Essa chave deve ser um Fernet key válido, por exemplo gerado com:
+- listar pacotes públicos
+- ver `latest`
+- ver versão específica
+- gerar signed URL de download
 
-```bash
-python3 - <<'PY'
-from cryptography.fernet import Fernet
-print(Fernet.generate_key().decode())
-PY
-```
+## Observabilidade
 
-Para AWS KMS, defina `AWS_KMS_KEY_ID` e `AWS_REGION`.
+O backend hoje expõe:
 
-- Para Vault Transit, defina:
-- `KMS_PROVIDER=transit`
-- `VAULT_ADDR`
-- `VAULT_TOKEN`
-- `VAULT_TRANSIT_KEY_NAME`
-- opcionalmente `VAULT_TRANSIT_MOUNT` se o mount não for `transit`
+- `X-Request-Id`
+- `X-Response-Time-Ms`
+- métricas em `/api/ops/metrics`
+- auditoria em arquivo e painel
 
-Na Vercel, o backend não cria mais `kms.key` local por padrão; com AWS KMS ou Vault Transit configurado, novas master keys passam a ser protegidas externamente.
+O desktop também grava logs de runtime em `/tmp/gatestack-desktop*.log`.
 
-### Upload de Projetos
+## Estrutura resumida do repositório
 
-Você pode subir arquivos `.zip` para o backend sem lidar com storage customizado.
-Basta configurar o Supabase Storage:
+- `api/`: endpoints REST
+- `core/`: IAM, jobs, auditoria, observabilidade
+- `frontend/`: cliente Next.js
+- `src-tauri/`: shell desktop
+- `utils/`: integrações como Supabase
+- `alembic/`: migrações formais
+- `tests/`: testes backend
 
-- `SUPABASE_URL=https://<seu-projeto>.supabase.co`
-- `SUPABASE_SERVICE_KEY=<service_role_key>`
-- `SUPABASE_BUCKET=<nome_do_bucket>`
+## Documentação complementar
 
-O backend envia os uploads para o bucket e só guarda a referência no banco.
-No dashboard agora há um componente `Projetos` para enviar `.zip` e listar o histórico.
+- relatório técnico atualizado: [backend-frontend-report.md](/home/zeus/Documentos/camellia-shield/docs/backend-frontend-report.md)
 
----
+## Estado atual
 
-## 📄 Licença
+Hoje o projeto já não é apenas um upload manager. Ele funciona como base real de uma plataforma de repositório com:
 
-MIT © 2024 Rodrigo Lima
+- backend de produto
+- frontend operacional
+- testes de backend e frontend
+- scaffold de E2E
+- distribuição desktop
+
+Os próximos passos mais naturais agora são:
+
+1. ampliar E2E
+2. endurecer a11y e mobile
+3. adicionar analytics visuais melhores
+4. integrar validações e testes no CI

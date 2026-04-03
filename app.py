@@ -1,5 +1,5 @@
 """
-Camellia Shield — Flask Backend
+GateStack — Flask Backend
 Serves the REST API consumed by the Next.js/Tauri frontend.
 """
 import os
@@ -17,8 +17,9 @@ filterwarnings("ignore", message=".*in-memory storage.*", category=UserWarning)
 load_dotenv()
 
 from core.logging.json_logger import configure_json_logging
+from core.observability import install_request_observability
+from core.async_jobs import start_async_job_worker
 from core.audit.logger import init_audit_logger
-from core.kms.manager import create_runtime_kms
 from core.iam.db import init_db
 
 try:
@@ -44,6 +45,7 @@ def _allowed_origins() -> set[str]:
 def create_app() -> Flask:
     app = Flask(__name__)
     init_db()
+    install_request_observability(app)
 
     env = os.getenv("FLASK_ENV", "production").lower()
     desktop_mode = os.getenv("DESKTOP_MODE", "0").lower() in ("1", "true", "yes")
@@ -66,14 +68,17 @@ def create_app() -> Flask:
 
     # ── Blueprints ────────────────────────────────────
     from api.auth import auth_bp
-    from api.projects import projects_bp
-    from api.vault import vault_bp
+    from api.projects import projects_bp, public_packages_bp
+    from api.access import access_bp
     from api.audit import audit_bp
+    from api.ops import ops_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(projects_bp)
-    app.register_blueprint(vault_bp)
+    app.register_blueprint(public_packages_bp)
+    app.register_blueprint(access_bp)
     app.register_blueprint(audit_bp)
+    app.register_blueprint(ops_bp)
 
     # ── Security middleware ───────────────────────────
     if Talisman is not None and not desktop_mode and env != "development":
@@ -106,7 +111,6 @@ def create_app() -> Flask:
         csrf = SeaSurf(app)
         csrf.exempt(auth_bp)
         csrf.exempt(projects_bp)
-        csrf.exempt(vault_bp)
         csrf.exempt(audit_bp)
 
     # ── Logging ───────────────────────────────────────
@@ -118,12 +122,6 @@ def create_app() -> Flask:
         init_audit_logger(audit_path)
     except Exception:
         pass
-
-    # ── KMS ───────────────────────────────────────────
-    try:
-        app.kms = create_runtime_kms(os.path.join(_runtime_writable_root(), "kms.key"))  # type: ignore[attr-defined]
-    except Exception:
-        app.kms = None  # type: ignore[attr-defined]
 
     # ── Health-check ──────────────────────────────────
     @app.route("/health")
@@ -152,6 +150,8 @@ def create_app() -> Flask:
     @app.route("/api/<path:path>", methods=["OPTIONS"])
     def options_handler(path):
         return "", 204
+
+    start_async_job_worker()
 
     return app
 

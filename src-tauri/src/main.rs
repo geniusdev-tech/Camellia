@@ -1,92 +1,195 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod commands;
-
-use std::sync::Mutex;
+use gatestack_lib::{
+    commands, set_runtime_status, BackendPort, DesktopLogger, DesktopRuntime, DesktopRuntimeStatus,
+};
+use std::{sync::Mutex, time::Duration};
 use tauri::{Manager, State};
 
-pub struct BackendPort(pub Mutex<u16>);
+#[cfg(not(debug_assertions))]
+use tauri_plugin_shell::{self, process::CommandEvent, ShellExt};
 
 fn main() {
-    tauri::Builder::default()
+    let startup_logger = DesktopLogger::new();
+    startup_logger.log("INFO", "Starting GateStack desktop runtime");
+
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(BackendPort(Mutex::new(5000)))
+        .manage(DesktopRuntime(Mutex::new(DesktopRuntimeStatus {
+            ready: false,
+            message: Some("Desktop runtime is still starting.".to_string()),
+            log_path: startup_logger.path_string(),
+        })))
         .setup(|app| {
             let app_handle = app.handle().clone();
             let port_state: State<BackendPort> = app.state();
+            let runtime_state: State<DesktopRuntime> = app.state();
+            let logger = DesktopLogger::new();
 
-            // Pick a free port (fallback to 5000)
-            let port = portpicker::pick_unused_port().unwrap_or(5000);
-            *port_state.0.lock().unwrap() = port;
+            let port = determine_port(&logger);
+            if let Ok(mut state) = port_state.inner().0.lock() {
+                *state = port;
+            } else {
+                logger.log("ERROR", "Failed to acquire backend port state lock");
+            }
 
-            // In release builds, launch the bundled Python sidecar
+            let mut failure_message: Option<String> = None;
+
             #[cfg(not(debug_assertions))]
             {
-                use tauri_plugin_shell::ShellExt;
-                let sidecar = app_handle
-                    .shell()
-                    .sidecar("camellia-backend")
-                    .unwrap()
-                    .env("PORT", port.to_string())
-                    .env("FLASK_ENV", "production")
-                    .env("DESKTOP_MODE", "1");
-
-                let (mut rx, _child) = sidecar.spawn().expect("Failed to start backend");
-
-                tauri::async_runtime::spawn(async move {
-                    use tauri_plugin_shell::process::CommandEvent;
-                    while let Some(event) = rx.recv().await {
-                        match event {
-                            CommandEvent::Stdout(line) => {
-                                let s = String::from_utf8_lossy(&line);
-                                println!("[backend] {}", s.trim());
+                if failure_message.is_none() {
+                    match app_handle.shell().sidecar("gatestack-backend") {
+                        Ok(port_command) => {
+                            let command = port_command
+                                .env("PORT", port.to_string())
+                                .env("FLASK_ENV", "production")
+                                .env("DESKTOP_MODE", "1");
+                            match command.spawn() {
+                                Ok((mut rx, _child)) => {
+                                    let logger = DesktopLogger::new();
+                                    tauri::async_runtime::spawn(async move {
+                                        while let Some(event) = rx.recv().await {
+                                            match event {
+                                                CommandEvent::Stdout(line) => {
+                                                    logger.log("BACKEND", &String::from_utf8_lossy(&line).trim());
+                                                }
+                                                CommandEvent::Stderr(line) => {
+                                                    logger.log("BACKEND_ERR", &String::from_utf8_lossy(&line).trim());
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    });
+                                }
+                                Err(err) => {
+                                    let message = format!("Failed to start backend sidecar: {err}");
+                                    logger.log("ERROR", &message);
+                                    failure_message = Some(message);
+                                }
                             }
-                            CommandEvent::Stderr(line) => {
-                                let s = String::from_utf8_lossy(&line);
-                                eprintln!("[backend:err] {}", s.trim());
-                            }
-                            _ => {}
+                        }
+                        Err(err) => {
+                            let message = format!("Failed to configure backend sidecar: {err}");
+                            logger.log("ERROR", &message);
+                            failure_message = Some(message);
                         }
                     }
-                });
+                }
             }
 
-            // Wait for Flask to become ready (max 10 s)
-            let check_url = format!("http://127.0.0.1:{}/api/auth/status", port);
-            let ready = (0..50).any(|_| {
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                reqwest::blocking::get(&check_url)
-                    .map(|r| r.status().as_u16() < 500)
-                    .unwrap_or(false)
-            });
-
-            if !ready {
-                eprintln!("[tauri] WARNING: backend did not respond in time");
+            if failure_message.is_none() {
+                if let Err(err) = wait_for_backend(port, &logger) {
+                    logger.log("WARN", &err);
+                    failure_message = Some(err);
+                }
             }
 
-            // Update the window URL to point to the correct port and show it
             if let Some(window) = app_handle.get_webview_window("main") {
-                let url = format!("http://127.0.0.1:{}", port);
-                // In dev mode the window already points to Next.js dev server;
-                // in release it loads the embedded static files served by Flask.
                 #[cfg(not(debug_assertions))]
                 {
-                    let _ = window.navigate(url.parse().unwrap());
+                    if failure_message.is_none() {
+                        let url = format!("http://127.0.0.1:{port}");
+                        match url.parse() {
+                            Ok(target) => {
+                                if let Err(err) = window.navigate(target) {
+                                    let message = format!("Failed to navigate desktop window: {err}");
+                                    logger.log("ERROR", &message);
+                                    failure_message = Some(message);
+                                }
+                            }
+                            Err(err) => {
+                                let message = format!("Failed to parse backend URL '{url}': {err}");
+                                logger.log("ERROR", &message);
+                                failure_message = Some(message);
+                            }
+                        }
+                    } else {
+                        logger.log("WARN", "Skipping desktop navigation because backend startup failed.");
+                    }
                 }
-                window.show().unwrap();
+                if let Err(err) = window.show() {
+                    let message = format!("Failed to show desktop window: {err}");
+                    logger.log("ERROR", &message);
+                    failure_message = Some(message);
+                }
+            } else {
+                let message = "Main desktop window was not found.".to_string();
+                logger.log("ERROR", &message);
+                failure_message = Some(message);
+            }
+
+            if let Some(message) = failure_message {
+                set_runtime_status(&runtime_state, false, Some(message));
+            } else {
+                logger.log("INFO", format!("Backend ready on port {port}"));
+                set_runtime_status(&runtime_state, true, None);
             }
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_backend_port,
+            commands::get_desktop_runtime_status,
             commands::check_backend_health,
             commands::get_app_version,
+            commands::get_desktop_log_path,
             commands::open_docs,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running camellia shield");
+        ]);
+
+    let context = tauri::generate_context!();
+    if let Err(err) = builder.run(context) {
+        startup_logger.log("ERROR", format!("Desktop runtime crashed: {err}"));
+        panic!("error while running GateStack: {err}");
+    }
+}
+
+fn determine_port(logger: &DesktopLogger) -> u16 {
+    if let Ok(value) = std::env::var("PORT") {
+        if let Ok(parsed) = value.parse::<u16>() {
+            return parsed;
+        }
+        logger.log("WARN", format!("Invalid PORT value '{value}', falling back to default."));
+    }
+    choose_default_port(logger)
+}
+
+fn choose_default_port(logger: &DesktopLogger) -> u16 {
+    if cfg!(debug_assertions) {
+        5000
+    } else {
+        match portpicker::pick_unused_port() {
+            Some(port) => port,
+            None => {
+                logger.log("WARN", "Unable to pick an unused port, defaulting to 5000.");
+                5000
+            }
+        }
+    }
+}
+
+fn wait_for_backend(port: u16, logger: &DesktopLogger) -> Result<(), String> {
+    let check_url = format!("http://127.0.0.1:{port}/api/auth/status");
+    for attempt in 0..50 {
+        std::thread::sleep(Duration::from_millis(200));
+        match reqwest::blocking::get(&check_url) {
+            Ok(response) => {
+                if response.status().is_success() || response.status().as_u16() < 500 {
+                    return Ok(());
+                }
+                logger.log("DEBUG", format!("Health check returned status {}", response.status()));
+            }
+            Err(err) => {
+                logger.log("DEBUG", format!("Health check attempt {attempt} failed: {err}"));
+            }
+        }
+    }
+    Err(format!(
+        "Backend did not respond in time on http://127.0.0.1:{port}. Check the desktop log at {}",
+        logger.path_string()
+    ))
 }

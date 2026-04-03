@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Camellia Shield",
+  "productName": "GateStack",
   "version": "2.1.0",
-  "identifier": "com.camellia.shield",
+  "identifier": "com.gatestack.app",
   "build": {
     "beforeDevCommand": "cd frontend && npm run dev",
     "beforeBuildCommand": "cd frontend && npm run build",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Camellia Shield",
+        "title": "GateStack",
         "width": 1300,
         "height": 820,
         "minWidth": 960,
@@ -30,11 +30,11 @@
     "security": {
       "csp": "default-src 'self' http://localhost:* blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://localhost:*; connect-src 'self' http://localhost:* ipc:; font-src 'self' data:"
     },
-    "trayIcon": {
+      "trayIcon": {
       "iconPath": "icons/32x32.png",
       "iconAsTemplate": true,
       "menuOnLeftClick": false,
-      "tooltip": "Camellia Shield"
+      "tooltip": "GateStack"
     }
   },
   "bundle": {
@@ -47,12 +47,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "resources/docs/**/*": "docs/",
-      "resources/licenses/**/*": "licenses/"
-    },
-    "externalBin": ["binaries/camellia-backend"],
-    "shortcut": true,
+    "externalBin": ["binaries/gatestack-backend"],
     "linux": {
       "deb": {
         "depends": []

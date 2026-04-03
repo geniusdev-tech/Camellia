@@ -1,30 +1,57 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { User } from '@/lib/types'
+import type { AuthUser } from '@/lib/types'
 
 interface AuthState {
-  user: User | null
+  user: AuthUser | null
   accessToken: string | null
+  refreshToken: string | null
   isAuthenticated: boolean
 
-  setUser: (user: User, token: string) => void
-  logout:  () => void
+  setSession: (user: AuthUser, accessToken: string, refreshToken?: string | null) => void
+  updateAccessToken: (accessToken: string, refreshToken?: string | null) => void
+  logout: () => void
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      user:            null,
-      accessToken:     null,
+      user: null,
+      accessToken: null,
+      refreshToken: null,
       isAuthenticated: false,
 
-      setUser: (user, accessToken) => set({ user, accessToken, isAuthenticated: true }),
+      setSession: (user, accessToken, refreshToken) =>
+        set({
+          user,
+          accessToken,
+          refreshToken: refreshToken ?? null,
+          isAuthenticated: true,
+        }),
 
-      logout: () => set({ user: null, accessToken: null, isAuthenticated: false }),
+      updateAccessToken: (accessToken, refreshToken) =>
+        set((state) => ({
+          accessToken,
+          refreshToken: refreshToken ?? state.refreshToken,
+          isAuthenticated: !!accessToken,
+        })),
+
+      logout: () =>
+        set({
+          user: null,
+          accessToken: null,
+          refreshToken: null,
+          isAuthenticated: false,
+        }),
     }),
     {
-      name: 'camellia-auth',
-      partialize: (s) => ({ user: s.user, accessToken: s.accessToken, isAuthenticated: s.isAuthenticated }),
+      name: 'gatestack-auth',
+      partialize: (state) => ({
+        user: state.user,
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+        isAuthenticated: state.isAuthenticated,
+      }),
     },
   ),
 )

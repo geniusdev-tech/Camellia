@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root user
-RUN groupadd -r camellia && useradd -r -g camellia camellia
+RUN groupadd -r gatestack && useradd -r -g gatestack gatestack
 
 WORKDIR /app
 
@@ -29,15 +29,15 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source
-COPY --chown=camellia:camellia . .
+COPY --chown=gatestack:gatestack . .
 
 # Copy built frontend into static dir (Flask serves it)
-COPY --from=frontend-builder --chown=camellia:camellia /app/frontend/out ./static/dist
+COPY --from=frontend-builder --chown=gatestack:gatestack /app/frontend/out ./static/dist
 
 # Initialise IAM DB
 RUN python scripts/init_iam_db.py || true
 
-USER camellia
+USER gatestack
 EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

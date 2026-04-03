@@ -4,22 +4,28 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Shield, LayoutDashboard, Settings, LogOut,
+  FolderKanban, LayoutDashboard, Settings, LogOut,
   Menu, X, ChevronRight, Bell, HelpCircle,
+  FolderGit2, Users, ActivitySquare, Globe2,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { authAPI } from '@/lib/api'
 import { TauriStatus } from '@/components/TauriStatus'
+import { canManageOwnerActions } from '@/lib/ui'
 
 const NAV = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/settings',  label: 'Configurações', icon: Settings },
+  { href: '/dashboard', label: 'Visão Geral', icon: LayoutDashboard, ownerOnly: false },
+  { href: '/repository', label: 'Repositório', icon: FolderGit2, ownerOnly: false },
+  { href: '/teams', label: 'Times', icon: Users, ownerOnly: false },
+  { href: '/ops', label: 'Operações', icon: ActivitySquare, ownerOnly: false },
+  { href: '/catalog', label: 'Catálogo', icon: Globe2, ownerOnly: false },
+  { href: '/settings', label: 'Conta', icon: Settings, ownerOnly: false },
 ]
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router    = useRouter()
   const pathname  = usePathname()
-  const { user, isAuthenticated, logout } = useAuthStore()
+  const { user, accessToken, refreshToken, isAuthenticated, logout, setSession } = useAuthStore()
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -33,9 +39,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     authAPI.status()
       .then((res) => {
         if (cancelled) return
-        if (!res.success || res.vault_unlocked === false) {
+        if (!res.success) {
           logout()
           router.replace('/login')
+          return
+        }
+        if (res.email && accessToken) {
+          setSession({
+            user_id: Number(res.user_id || 0) || user?.user_id,
+            email: res.email,
+            has_2fa: !!res.has_2fa,
+            role: res.role || null,
+          }, accessToken, refreshToken)
         }
       })
       .catch(() => {
@@ -45,7 +60,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       })
 
     return () => { cancelled = true }
-  }, [isAuthenticated, logout, router])
+  }, [accessToken, refreshToken, isAuthenticated, logout, router, setSession, user?.user_id])
 
   const handleLogout = async () => {
     try { await authAPI.logout() } catch {}
@@ -64,11 +79,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Logo */}
       <div className="h-16 flex items-center gap-3 px-5 border-b border-white/[0.05]">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center shrink-0">
-          <Shield className="w-4 h-4 text-white" />
+          <FolderKanban className="w-4 h-4 text-white" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-bold text-white font-display leading-none">Camellia Shield</p>
-          <p className="text-[10px] text-gray-500 mt-0.5">v2.1 Enterprise</p>
+          <p className="text-sm font-bold text-white font-display leading-none">GateStack</p>
+          <p className="text-[10px] text-gray-500 mt-0.5">The access control stack</p>
         </div>
         <TauriStatus className="ml-auto" />
       </div>
@@ -78,7 +93,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <p className="px-3 mb-2 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">
           Principal
         </p>
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {NAV.filter((item) => !item.ownerOnly || canManageOwnerActions(user?.role)).map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(href + '/')
           return (
             <Link
@@ -108,7 +123,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-white truncate">{user.email}</p>
-              <p className="text-[10px] text-gray-500">{user.has_2fa ? '🛡 2FA ativo' : '⚠ Sem 2FA'}</p>
+              <p className="text-[10px] text-gray-500">{user.role || 'user'} · {user.has_2fa ? '2FA ativo' : '2FA inativo'}</p>
             </div>
           </div>
           <button

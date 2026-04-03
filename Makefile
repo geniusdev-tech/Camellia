@@ -1,20 +1,23 @@
 # ─────────────────────────────────────────────────────
-#  Camellia Shield — Build Automation
+#  GateStack — Build Automation
 # ─────────────────────────────────────────────────────
 .PHONY: help dev build build-win build-mac build-linux \
         install install-py install-node \
-        bundle-backend clean docs
+        bundle-backend db-migrate db-revision clean
 
-PYTHON   ?= python3
+VENV_DIR ?= .venv
+PYTHON   ?= $(if $(wildcard $(VENV_DIR)/bin/python),$(VENV_DIR)/bin/python,python3)
 NPM      ?= npm
 CARGO    ?= cargo
-TAURI    ?= npx tauri
+TAURI    ?= npx --prefix frontend tauri
+PORT     ?= 5000
+HOST_TRIPLE ?= $(shell $(CARGO) -vV | sed -n 's/^host: //p')
 NODE_ENV ?= production
 
 # ── Help ──────────────────────────────────────────────
 help:
 	@echo ""
-	@echo "  Camellia Shield — Comandos disponíveis:"
+	@echo "  GateStack — Comandos disponíveis:"
 	@echo ""
 	@echo "  make install        — instala todas as dependências (Python + Node + Rust)"
 	@echo "  make dev            — inicia Next.js dev + Flask API side-by-side"
@@ -23,7 +26,8 @@ help:
 	@echo "  make build-mac      — build macOS (requer XCode CLI + Codesign)"
 	@echo "  make build-linux    — build Linux (.deb, .rpm, .AppImage)"
 	@echo "  make bundle-backend — cria executável Python (PyInstaller)"
-	@echo "  make docs           — gera guias do usuário em HTML"
+	@echo "  make db-migrate     — aplica migrações Alembic"
+	@echo "  make db-revision    — cria revisão Alembic autogerada (MSG=...)"
 	@echo "  make clean          — remove artefatos de build"
 	@echo ""
 
@@ -42,65 +46,83 @@ install-node:
 # ── Development ───────────────────────────────────────
 dev:
 	@echo "→ Iniciando Flask na porta 5000 e Next.js na porta 3000…"
-	FLASK_ENV=development FLASK_DEBUG=1 DESKTOP_MODE=1 \
-	    $(PYTHON) app.py & \
+	@set -e; \
+	backend_pid=""; \
+	cleanup() { \
+		if [ -n "$$backend_pid" ]; then \
+			kill "$$backend_pid" 2>/dev/null || true; \
+			wait "$$backend_pid" 2>/dev/null || true; \
+		fi; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	FLASK_ENV=development FLASK_DEBUG=1 DESKTOP_MODE=1 PORT=$(PORT) $(PYTHON) app.py & \
+	backend_pid=$$!; \
 	cd frontend && $(NPM) run dev
 
 dev-tauri:
 	@echo "→ Iniciando Tauri em modo dev…"
-	FLASK_ENV=development DESKTOP_MODE=1 $(PYTHON) app.py & \
-	cd frontend && $(TAURI) dev
+	@set -e; \
+	backend_pid=""; \
+	cleanup() { \
+		if [ -n "$$backend_pid" ]; then \
+			kill "$$backend_pid" 2>/dev/null || true; \
+			wait "$$backend_pid" 2>/dev/null || true; \
+		fi; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	FLASK_ENV=development DESKTOP_MODE=1 PORT=$(PORT) $(PYTHON) app.py & \
+	backend_pid=$$!; \
+	PORT=$(PORT) $(TAURI) dev --config src-tauri/tauri.conf.json
 
 # ── Bundle Python backend → single binary ─────────────
 bundle-backend:
 	@echo "→ Empacotando backend Python com PyInstaller…"
 	$(PYTHON) -m PyInstaller \
 	    --onefile \
-	    --name camellia-backend \
+	    --name gatestack-backend \
 	    --add-data "core:core" \
 	    --add-data "api:api" \
 	    --add-data "config.py:." \
-	    --add-data "services.py:." \
-	    --hidden-import cryptography \
 	    --hidden-import argon2 \
 	    --hidden-import sqlalchemy \
 	    --hidden-import flask_talisman \
 	    --hidden-import flask_seasurf \
 	    --hidden-import flask_limiter \
-	    --hidden-import pynacl \
 	    --distpath src-tauri/binaries \
 	    app.py
-	@echo "✓ src-tauri/binaries/camellia-backend criado."
+	@if [ -n "$(HOST_TRIPLE)" ] && [ -f src-tauri/binaries/gatestack-backend ]; then \
+		cp src-tauri/binaries/gatestack-backend src-tauri/binaries/gatestack-backend-$(HOST_TRIPLE); \
+	fi
+	@echo "✓ src-tauri/binaries/gatestack-backend criado."
+
+db-migrate:
+	$(PYTHON) -m alembic upgrade head
+
+db-revision:
+	@test -n "$(MSG)" || (echo "Use MSG='descricao-da-migracao'"; exit 1)
+	$(PYTHON) -m alembic revision --autogenerate -m "$(MSG)"
 
 # ── Tauri build helpers ────────────────────────────────
-_tauri-build-prep: bundle-backend docs
-	mkdir -p src-tauri/resources/docs
-	cp -r docs/user-guide/. src-tauri/resources/docs/
+_tauri-build-prep: bundle-backend
 
 build: _tauri-build-prep
-	cd frontend && $(TAURI) build
+	$(TAURI) build --config src-tauri/tauri.conf.json
 
 build-linux: _tauri-build-prep
-	cd frontend && $(TAURI) build --target x86_64-unknown-linux-gnu
+	$(TAURI) build --config src-tauri/tauri.conf.json --target x86_64-unknown-linux-gnu
 
 build-win: _tauri-build-prep
-	cd frontend && $(TAURI) build --target x86_64-pc-windows-msvc
+	$(TAURI) build --config src-tauri/tauri.conf.json --target x86_64-pc-windows-msvc
 
 build-mac: _tauri-build-prep
-	cd frontend && $(TAURI) build --target universal-apple-darwin
-
-# ── Docs generation ───────────────────────────────────
-docs:
-	@echo "→ Gerando guias do usuário…"
-	mkdir -p docs/user-guide
-	$(PYTHON) scripts/generate_docs.py
-	@echo "✓ Guias gerados em docs/user-guide/"
+	$(TAURI) build --config src-tauri/tauri.conf.json --target universal-apple-darwin
 
 # ── Clean ─────────────────────────────────────────────
 clean:
 	rm -rf build dist __pycache__ *.spec
 	rm -rf frontend/.next frontend/out
 	rm -rf src-tauri/target
-	rm -f src-tauri/binaries/camellia-backend
-	rm -f src-tauri/binaries/camellia-backend.exe
+	rm -f src-tauri/binaries/gatestack-backend
+	rm -f src-tauri/binaries/gatestack-backend-*
+	rm -f src-tauri/binaries/gatestack-backend.exe
 	@echo "✓ Limpeza concluída."

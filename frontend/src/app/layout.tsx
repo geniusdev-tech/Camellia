@@ -3,8 +3,8 @@ import './globals.css'
 import { Providers } from '@/components/providers'
 
 export const metadata: Metadata = {
-  title: 'Camellia Shield',
-  description: 'Hardened Secure Local Workspace — military-grade file encryption',
+  title: 'GateStack',
+  description: 'The access control stack.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

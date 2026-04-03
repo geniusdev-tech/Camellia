@@ -1,9 +1,11 @@
 'use client'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, Shield, AlertTriangle, LogIn, LogOut, Lock, Unlock, KeyRound, CheckCircle2 } from 'lucide-react'
+import { RefreshCw, Shield, AlertTriangle, LogIn, LogOut, KeyRound, CheckCircle2, FileArchive, List } from 'lucide-react'
 import { clsx } from 'clsx'
 import { getApiBase } from '@/lib/tauri'
+import { useAuthStore } from '@/store/auth'
+import { isProjectLikelyReferenced } from '@/lib/ui'
 
 const ICON_MAP: Record<string, React.ElementType> = {
   'auth.login.success':   LogIn,
@@ -12,8 +14,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   'auth.mfa.enabled':     KeyRound,
   'auth.mfa.success':     CheckCircle2,
   'auth.mfa.failure':     AlertTriangle,
-  'crypto.file.encrypt':  Lock,
-  'crypto.file.decrypt':  Unlock,
+  'projects.upload':      FileArchive,
+  'projects.list':        List,
   'security.unauthorized_access': AlertTriangle,
 }
 
@@ -39,23 +41,26 @@ const LABEL_MAP: Record<string, string> = {
   'auth.mfa.enabled': '2FA ativado',
   'auth.mfa.success': '2FA validado',
   'auth.mfa.failure': 'Falha no 2FA',
-  'crypto.file.encrypt': 'Arquivo criptografado',
-  'crypto.file.decrypt': 'Arquivo descriptografado',
+  'projects.upload': 'Projeto publicado',
+  'projects.list': 'Listagem de projetos',
 }
 
-export function AuditLogPanel() {
+export function AuditLogPanel({
+  projectId,
+  packageName,
+}: {
+  projectId?: string
+  packageName?: string
+} = {}) {
   const [loaded, setLoaded] = useState(false)
-  const [typeFilter, setTypeFilter] = useState<'all' | 'auth' | 'crypto' | 'warning'>('all')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'auth' | 'projects' | 'warning'>('all')
+  const token = useAuthStore((state) => state.accessToken)
 
   const { data, isFetching, refetch } = useQuery({
     queryKey: ['audit-events'],
     enabled: loaded,
     queryFn: async () => {
       const base = await getApiBase()
-      const token = typeof localStorage !== 'undefined'
-        ? (JSON.parse(localStorage.getItem('camellia-auth') || '{}') as { state?: { accessToken?: string } })
-            ?.state?.accessToken ?? ''
-        : ''
 
       const res = await fetch(`${base}/api/audit/events`, {
         headers: {
@@ -71,14 +76,19 @@ export function AuditLogPanel() {
   const entries = (data ?? []).filter((entry) => {
     if (typeFilter === 'all') return true
     if (typeFilter === 'auth') return entry.event_type.startsWith('auth.')
-    if (typeFilter === 'crypto') return entry.event_type.startsWith('crypto.')
+    if (typeFilter === 'projects') return entry.event_type.startsWith('projects.')
     return entry.severity !== 'INFO'
+  }).filter((entry) => {
+    if (!projectId && !packageName) return true
+    if (projectId && isProjectLikelyReferenced(projectId, entry.details)) return true
+    if (packageName && JSON.stringify(entry.details || {}).includes(packageName)) return true
+    return false
   })
 
   const filterTabs = [
     { value: 'all', label: 'Todos' },
     { value: 'auth', label: 'Auth' },
-    { value: 'crypto', label: 'Cripto' },
+    { value: 'projects', label: 'Projetos' },
     { value: 'warning', label: 'Alertas' },
   ] as const
 

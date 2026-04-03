@@ -11,7 +11,7 @@ import { MFASetupModal } from '@/components/features/MFASetupModal'
 import { AuditLogPanel } from '@/components/features/AuditLogPanel'
 
 export default function SettingsPage() {
-  const { user, accessToken, setUser } = useAuthStore()
+  const { user, accessToken, refreshToken, setSession } = useAuthStore()
   const [mfaModal, setMfaModal]   = useState(false)
   const [loading, setLoading]     = useState(false)
   const [feedback, setFeedback]   = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
@@ -27,7 +27,7 @@ export default function SettingsPage() {
     try {
       const res = await authAPI.disable2FA()
       if (res.success && user && accessToken) {
-        setUser({ ...user, has_2fa: false }, accessToken)
+        setSession({ ...user, has_2fa: false }, accessToken, refreshToken)
         toast('ok', '2FA desativado.')
       } else {
         toast('err', res.msg || 'Erro')
@@ -176,8 +176,8 @@ export default function SettingsPage() {
           <Shield className="w-5 h-5 text-primary-400" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-white font-display">Configurações</h1>
-          <p className="text-xs text-gray-500">Gerencie segurança, criptografia e sessão</p>
+          <h1 className="text-xl font-bold text-white font-display">Conta e preferências</h1>
+          <p className="text-xs text-gray-500">Ajuste acesso, proteção da conta e sinais do repositório</p>
         </div>
       </div>
 
@@ -237,12 +237,44 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      <section className="glass rounded-2xl p-5 shadow-panel">
+        <div className="flex items-center gap-2 mb-4 pb-4 border-b border-white/[0.05]">
+          <RefreshCw className="w-4 h-4 text-gray-400" />
+          <h2 className="text-sm font-semibold text-white">Sessões</h2>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-white font-medium">Logout global</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Revoga todas as sessões de refresh token persistidas no backend.
+            </p>
+          </div>
+          <button
+            onClick={async () => {
+              setLoading(true)
+              try {
+                const res = await authAPI.logoutAll()
+                if (res.success) toast('ok', 'Todas as sessões foram encerradas.')
+                else toast('err', res.msg || 'Erro ao encerrar sessões.')
+              } catch {
+                toast('err', 'Erro de rede')
+              } finally {
+                setLoading(false)
+              }
+            }}
+            className="shrink-0 px-4 py-2 rounded-xl bg-primary-600/20 border border-primary-500/20 text-primary-200 text-sm font-medium"
+          >
+            Encerrar tudo
+          </button>
+        </div>
+      </section>
+
       {/* 2FA Modal */}
       <MFASetupModal
         open={mfaModal}
         onClose={() => setMfaModal(false)}
         onSuccess={() => {
-          if (user && accessToken) setUser({ ...user, has_2fa: true }, accessToken)
+          if (user && accessToken) setSession({ ...user, has_2fa: true }, accessToken, refreshToken)
           setMfaModal(false)
           toast('ok', '2FA ativado com sucesso!')
         }}

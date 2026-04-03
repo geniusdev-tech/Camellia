@@ -1,17 +1,19 @@
 """
 Authentication API Blueprint — hardened version
 """
-from flask import Blueprint, request, jsonify, session, g, current_app
-from core.crypto.engine import CryptoEngine
+import base64
+import re
+from io import BytesIO
+from datetime import datetime, timezone
+
+import qrcode
+from flask import Blueprint, request, jsonify, session, g
 from core.iam.db import SessionLocal
 from core.iam.auth import AuthController
-from core.iam.models import User
+from core.iam.models import RefreshTokenSession, Role, User
 from core.iam.rbac import require_auth
-from core.iam.session import key_manager
 from core.audit.logger import get_audit_logger
-from core.kms.manager import wrap_master_key, unwrap_master_key
 import traceback
-import json
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
@@ -34,6 +36,48 @@ def _db_controller():
     return db, AuthController(db)
 
 
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _password_error(password: str) -> str | None:
+    if len(password) < 12:
+        return "Senha deve ter pelo menos 12 caracteres"
+    if not re.search(r"[A-Z]", password):
+        return "Senha deve conter ao menos uma letra maiúscula"
+    if not re.search(r"[a-z]", password):
+        return "Senha deve conter ao menos uma letra minúscula"
+    if not re.search(r"[0-9]", password):
+        return "Senha deve conter ao menos um número"
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return "Senha deve conter ao menos um caractere especial"
+    return None
+
+
+def _create_refresh_session(db, payload, user_id: int) -> RefreshTokenSession:
+    session_row = RefreshTokenSession(
+        user_id=user_id,
+        token_jti=payload["jti"],
+        token_type="refresh",
+        issued_at=_utcnow(),
+        expires_at=datetime.fromtimestamp(payload["exp"], timezone.utc).isoformat(),
+        user_agent=request.headers.get("User-Agent"),
+        ip_address=request.headers.get("X-Forwarded-For", request.remote_addr),
+    )
+    db.add(session_row)
+    db.commit()
+    return session_row
+
+
+def _revoke_refresh_session(db, token_jti: str, replaced_by_jti: str | None = None) -> None:
+    session_row = db.query(RefreshTokenSession).filter_by(token_jti=token_jti).first()
+    if not session_row or session_row.revoked_at:
+        return
+    session_row.revoked_at = _utcnow()
+    session_row.replaced_by_jti = replaced_by_jti
+    db.commit()
+
+
 def _log_event(event_type, user, severity="INFO", details=None):
     try:
         get_audit_logger().log_event(event_type, user=user, severity=severity, details=details or {})
@@ -41,8 +85,11 @@ def _log_event(event_type, user, severity="INFO", details=None):
         pass
 
 
-def _kms_provider():
-    return getattr(current_app, "kms", None)
+def _make_qr_data_url(value: str) -> str:
+    buffer = BytesIO()
+    qrcode.make(value).save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 # ── Login ───────────────────────────────────────────────────
@@ -54,8 +101,8 @@ def login():
     try:
         data = request.get_json(silent=True) or {}
 
-        username = data.get("email") or data.get("username", "rodrigo@mail.com")
-        password = data.get("password", "Nses@100")
+        username = (data.get("email") or data.get("username") or "").strip()
+        password = data.get("password", "")
 
         if not username or not password:
             return fail("Credenciais obrigatórias")
@@ -70,29 +117,9 @@ def login():
             _log_event("auth.login.failure", user.username, "WARNING", {"reason": "inactive"})
             return fail("Conta desativada", 403)
 
-        # ── Master Key ─────────────────────────────
-        master_key = None
-
-        if user.wrapped_key:
-            try:
-                wrapped = json.loads(user.wrapped_key)
-                master_key = unwrap_master_key(
-                    wrapped,
-                    password,
-                    kms=_kms_provider(),
-                )
-
-            except Exception as e:
-                traceback.print_exc()
-                return fail("Falha ao desbloquear chave mestra", 500, e)
-
         # ── MFA ────────────────────────────────────
         if user.mfa_secret_enc:
             session["pre_auth_user_id"] = user.id
-
-            if master_key:
-                key_manager.store_key(f"pre_auth_{user.id}", master_key, ttl=300)
-
             return jsonify({
                 "success": False,
                 "requires_mfa": True,
@@ -100,20 +127,20 @@ def login():
                 "msg": "MFA necessário"
             })
 
-        # ── Sucesso completo ───────────────────────
-        if master_key:
-            key_manager.store_key(user.id, master_key)
-
         roles = [user.role.name] if user.role else []
+        refresh_token = controller.create_refresh_token(user.id)
+        refresh_payload = controller.decode_token(refresh_token)
+        if not refresh_payload:
+            return fail("Erro ao gerar sessão", 500)
+        _create_refresh_session(db, refresh_payload, user.id)
 
         _log_event("auth.login.success", user.username)
         return ok({
             "access_token": controller.create_access_token(user.id, roles),
-            "refresh_token": controller.create_refresh_token(user.id),
+            "refresh_token": refresh_token,
             "email": user.username,
             "has_2fa": bool(user.mfa_secret_enc),
             "role": user.role.name if user.role else None,
-            "vault_unlocked": bool(master_key),
         })
 
     except Exception as e:
@@ -149,24 +176,20 @@ def login_mfa():
 
         session.pop("pre_auth_user_id", None)
 
-        pending = key_manager.get_key(f"pre_auth_{user.id}")
-
-        if not pending:
-            return fail("Sessão expirada", 401)
-
-        key_manager.store_key(user.id, pending)
-        key_manager.clear_key(f"pre_auth_{user.id}")
-
         roles = [user.role.name] if user.role else []
+        refresh_token = controller.create_refresh_token(user.id)
+        refresh_payload = controller.decode_token(refresh_token)
+        if not refresh_payload:
+            return fail("Erro ao gerar sessão", 500)
+        _create_refresh_session(db, refresh_payload, user.id)
 
         _log_event("auth.mfa.success", user.username)
         return ok({
             "access_token": controller.create_access_token(user.id, roles),
-            "refresh_token": controller.create_refresh_token(user.id),
+            "refresh_token": refresh_token,
             "email": user.username,
             "has_2fa": True,
             "role": user.role.name if user.role else None,
-            "vault_unlocked": True,
         })
 
     except Exception as e:
@@ -181,12 +204,17 @@ def login_mfa():
 
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
+    db = SessionLocal()
     try:
         user_id = g.get("user_id") or session.get("pre_auth_user_id")
+        data = request.get_json(silent=True) or {}
+        refresh_token = data.get("refresh_token", "")
 
-        if user_id:
-            key_manager.clear_key(user_id)
-            key_manager.clear_key(f"pre_auth_{user_id}")
+        if refresh_token:
+            controller = AuthController(db)
+            payload = controller.decode_token(refresh_token)
+            if payload and payload.get("type") == "refresh" and payload.get("jti"):
+                _revoke_refresh_session(db, payload["jti"])
 
         session.clear()
         _log_event("auth.logout", str(user_id or "anonymous"))
@@ -196,12 +224,31 @@ def logout():
     except Exception as e:
         traceback.print_exc()
         return fail("Erro ao fazer logout", 500, e)
+    finally:
+        db.close()
+
+
+@auth_bp.route("/logout-all", methods=["POST"])
+@require_auth
+def logout_all():
+    db = SessionLocal()
+    try:
+        sessions = db.query(RefreshTokenSession).filter_by(user_id=g.user_id).all()
+        now = _utcnow()
+        for session_row in sessions:
+            session_row.revoked_at = now
+        db.commit()
+        _log_event("auth.logout_all", str(g.user_id))
+        return ok({"msg": "Todas as sessões foram encerradas"})
+    finally:
+        db.close()
 
 
 # ── Refresh ────────────────────────────────────────────────
 
 @auth_bp.route("/refresh", methods=["POST"])
 def refresh_token():
+    db = None
     try:
         data = request.get_json(silent=True) or {}
         token = data.get("refresh_token", "")
@@ -213,7 +260,7 @@ def refresh_token():
 
         payload = controller.decode_token(token)
 
-        if not payload or payload.get("type") != "refresh":
+        if not payload or payload.get("type") != "refresh" or not payload.get("jti"):
             return fail("Token inválido", 401)
 
         user_id = payload["sub"]
@@ -223,16 +270,30 @@ def refresh_token():
         if not user or not user.is_active:
             return fail("Usuário inválido", 401)
 
+        session_row = db.query(RefreshTokenSession).filter_by(token_jti=payload["jti"]).first()
+        if not session_row or session_row.revoked_at:
+            _log_event("auth.refresh.failure", str(user_id), "WARNING", {"reason": "revoked_or_missing"})
+            return fail("Refresh token revogado", 401)
+
         roles = [user.role.name] if user.role else []
+        new_refresh_token = controller.create_refresh_token(user.id, payload.get("family"))
+        new_refresh_payload = controller.decode_token(new_refresh_token)
+        if not new_refresh_payload:
+            return fail("Erro ao renovar sessão", 500)
+        _create_refresh_session(db, new_refresh_payload, user.id)
+        _revoke_refresh_session(db, payload["jti"], new_refresh_payload["jti"])
 
         return ok({
             "access_token": controller.create_access_token(user.id, roles),
-            "refresh_token": controller.create_refresh_token(user.id),
+            "refresh_token": new_refresh_token,
         })
 
     except Exception as e:
         traceback.print_exc()
         return fail("Erro no refresh", 500, e)
+    finally:
+        if db is not None:
+            db.close()
 
 
 # ── Register ───────────────────────────────────────────────
@@ -250,27 +311,18 @@ def register():
         if not email or not password:
             return fail("Email e senha obrigatórios")
 
-        if len(password) < 8:
-            return fail("Senha muito curta")
+        password_error = _password_error(password)
+        if password_error:
+            return fail(password_error)
 
         if db.query(User).filter_by(username=email).first():
             return fail("Email já cadastrado", 409)
-
-        from core.crypto.engine import CryptoEngine
-        from core.iam.models import Role
-
-        pw_hash = controller.hash_password(password)
-
-        crypto = CryptoEngine()
-        master_key = crypto.generate_master_key()
-        wrapped = wrap_master_key(master_key, password, kms=_kms_provider())
 
         user_role = db.query(Role).filter_by(name="user").first()
 
         user = User(
             username=email,
-            password_hash=pw_hash,
-            wrapped_key=json.dumps(wrapped),
+            password_hash=controller.hash_password(password),
             role=user_role,
             is_active=True,
         )
@@ -297,10 +349,10 @@ def status():
         if not user:
             return fail("Usuário não encontrado", 404)
         return ok({
+            "user_id": user.id,
             "email": user.username,
             "has_2fa": bool(user.mfa_secret_enc),
             "role": user.role.name if user.role else None,
-            "vault_unlocked": bool(key_manager.get_key(user.id)),
         })
     finally:
         db.close()
@@ -321,7 +373,7 @@ def mfa_setup():
 
         return ok({
             "secret": secret,
-            "qr_code": CryptoEngine().make_qr_data_url(controller.build_totp_uri(user.username, secret)),
+            "qr_code": _make_qr_data_url(controller.build_totp_uri(user.username, secret)),
         })
     finally:
         db.close()

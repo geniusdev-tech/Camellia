@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Shield, Eye, EyeOff, Loader2, AlertCircle, Lock, ArrowRight } from 'lucide-react'
+import { FolderGit2, Eye, EyeOff, Loader2, AlertCircle, Sparkles, ArrowRight } from 'lucide-react'
 import { authAPI } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 
@@ -10,7 +10,7 @@ type Mode = 'login' | 'register' | 'mfa'
 
 export default function LoginPage() {
   const router  = useRouter()
-  const setUser = useAuthStore((s) => s.setUser)
+  const setSession = useAuthStore((s) => s.setSession)
 
   const [mode, setMode]         = useState<Mode>('login')
   const [email, setEmail]       = useState('')
@@ -43,7 +43,12 @@ export default function LoginPage() {
         if (!userId) { setError('Sessão inválida'); return }
         const res = await authAPI.loginMFA({ code: mfaCode, user_id: userId })
         if (res.success && res.access_token) {
-          setUser({ email: res.email || email, has_2fa: true }, res.access_token)
+          setSession({
+            user_id: Number(res.user_id || userId),
+            email: res.email || email,
+            has_2fa: true,
+            role: res.role || null,
+          }, res.access_token, res.refresh_token)
           router.replace('/dashboard')
         } else {
           setError(res.msg || 'Código inválido')
@@ -57,7 +62,12 @@ export default function LoginPage() {
         setUserId(res.user_id ?? null)
         setMode('mfa')
       } else if (res.success && res.access_token) {
-        setUser({ email: res.email || email, has_2fa: res.has_2fa || false }, res.access_token)
+        setSession({
+          user_id: Number(res.user_id || 0) || undefined,
+          email: res.email || email,
+          has_2fa: res.has_2fa || false,
+          role: res.role || null,
+        }, res.access_token, res.refresh_token)
         router.replace('/dashboard')
       } else {
         setError(res.msg || 'Credenciais inválidas')
@@ -67,7 +77,7 @@ export default function LoginPage() {
     } finally {
       setLoading(false)
     }
-  }, [mode, email, password, mfaCode, userId, setUser, router])
+  }, [mode, email, password, mfaCode, userId, setSession, router])
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-dark-900 bg-grid-dark p-4">
@@ -88,14 +98,14 @@ export default function LoginPage() {
           <div className="flex flex-col items-center mb-8">
             <div className="relative mb-4">
               <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center shadow-glow-accent">
-                <Shield className="w-8 h-8 text-white" />
+                <FolderGit2 className="w-8 h-8 text-white" />
               </div>
               <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-accent rounded-full border-2 border-dark-900 flex items-center justify-center">
-                <Lock className="w-2.5 h-2.5 text-dark-900" />
+                <Sparkles className="w-2.5 h-2.5 text-dark-900" />
               </div>
             </div>
-            <h1 className="text-xl font-bold tracking-tight font-display">Camellia Shield</h1>
-            <p className="text-xs text-gray-500 mt-0.5">Enterprise Security Platform</p>
+            <h1 className="text-xl font-bold tracking-tight font-display">GateStack</h1>
+            <p className="text-xs text-gray-500 mt-0.5">The access control stack</p>
           </div>
 
           {/* Tab switcher (login / register) */}
@@ -166,8 +176,9 @@ export default function LoginPage() {
             ) : (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5">Email</label>
+                  <label htmlFor="email" className="block text-xs font-medium text-gray-400 mb-1.5">Email</label>
                   <input
+                    id="email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -178,9 +189,10 @@ export default function LoginPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5">Senha</label>
+                  <label htmlFor="password" className="block text-xs font-medium text-gray-400 mb-1.5">Senha</label>
                   <div className="relative">
                     <input
+                      id="password"
                       type={showPwd ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
@@ -218,7 +230,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-gray-600 mt-4">
-          AES-256-GCM · Argon2id · Ed25519
+          Coleção centralizada · uploads versionados · curadoria visual
         </p>
       </motion.div>
     </main>

@@ -37,12 +37,13 @@ keys/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/tsconfig.tsbuildinfo
 node_modules/
 
 # Rust / Tauri
 src-tauri/target/
-src-tauri/binaries/camellia-backend
-src-tauri/binaries/camellia-backend.exe
+src-tauri/Cargo.lock
+src-tauri/binaries/gatestack-backend*
 
 # OS
 .DS_Store

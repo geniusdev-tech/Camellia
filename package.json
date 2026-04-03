@@ -1,16 +1,12 @@
 {
-  "name": "camellia-shield",
+  "name": "gatestack",
   "version": "2.1.0",
   "private": true,
-  "description": "Hardened secure local workspace — military-grade file encryption",
+  "description": "Repositório visual de projetos e pacotes curados",
   "scripts": {
-    "dev":          "concurrently -k -n FLASK,NEXT -c cyan,magenta \"python app.py\" \"cd frontend && npm run dev\"",
-    "dev:tauri":    "cd frontend && npm run tauri dev",
+    "dev":          "make dev",
+    "dev:tauri":    "make dev-tauri",
     "build":        "make build",
-    "build:docs":   "python scripts/generate_docs.py",
-    "install:all":  "pip install -r requirements.txt && cd frontend && npm ci"
-  },
-  "devDependencies": {
-    "concurrently": "^8.2.2"
+    "install:all":  "make install"
   }
 }

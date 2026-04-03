@@ -1,6 +1,7 @@
 'use client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useRef } from 'react'
+import { Toaster } from '@/components/ui/Toaster'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const qcRef = useRef<QueryClient | null>(null)
@@ -19,6 +20,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={qcRef.current}>
       {children}
+      <Toaster />
     </QueryClientProvider>
   )
 }
