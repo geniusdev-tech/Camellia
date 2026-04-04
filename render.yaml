@@ -7,6 +7,7 @@ services:
     branch: main
     dockerfile: Dockerfile
     healthCheckPath: /health
+    preDeployCommand: npm run prisma:migrate:deploy
     
     envVars:
       # Node & Core
@@ -19,25 +20,25 @@ services:
       - key: LOG_LEVEL
         value: info
       
-      # Frontend URL (atualize com seu domínio)
+      # Frontend URL
       - key: ALLOWED_ORIGIN
-        value: http://localhost:3000
+        value: "http://localhost:3000"
       
-      # JWT & Security (gerado automaticamente)
+      # JWT & Security (use valores seguros/gere no Dashboard depois)
       - key: JWT_SECRET
-        generateValue: true
+        value: "change-me-to-random-32-chars-min-on-render-dashboard"
       - key: JWT_EXPIRES_IN
-        value: 7d
+        value: "7d"
       
-      # Admin padrão (MUDE APÓS PRIMEIRO LOGIN!)
+      # Admin padrão (ALTERE NO DASHBOARD ANTES DO DEPLOY!)
       - key: ADMIN_EMAIL
-        value: admin@gatestack.local
+        value: "admin@gatestack.local"
       - key: ADMIN_PASSWORD
-        generateValue: true
+        value: "ChangeMeNow_12345"
       
-      # Métricas
+      # Métricas (use valor seguro/gere no Dashboard depois)
       - key: METRICS_TOKEN
-        generateValue: true
+        value: "change-me-to-random-token-on-render-dashboard"
       
       # Rate Limiting
       - key: THROTTLE_TTL
@@ -49,7 +50,13 @@ services:
       - key: PUBLISH_MAX_CVSS
         value: "7"
       
-      # Database (vinculado automaticamente)
+      # Redis (configurar no Dashboard se usar Redis gerenciado)
+      - key: REDIS_HOST
+        value: "redis"
+      - key: REDIS_PORT
+        value: "6379"
+      
+      # Database (será definido automaticamente pelo Render)
       - key: DATABASE_URL
         fromDatabase:
           name: gatestack-db
