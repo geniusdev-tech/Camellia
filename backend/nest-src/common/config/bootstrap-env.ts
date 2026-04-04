@@ -5,6 +5,17 @@ function firstNonEmpty(...values: Array<string | undefined>): string | undefined
   return undefined;
 }
 
+function isPlaceholderDatabaseUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    return ['postgres', 'db', 'localhost', '127.0.0.1'].includes(host);
+  } catch {
+    return false;
+  }
+}
+
 function buildDatabaseUrlFromPgVars(): string | undefined {
   const host = firstNonEmpty(process.env.PGHOST);
   const port = firstNonEmpty(process.env.PGPORT) ?? '5432';
@@ -30,15 +41,17 @@ function buildDatabaseUrlFromPgVars(): string | undefined {
   return query ? `${base}?${query}` : base;
 }
 
-if (!firstNonEmpty(process.env.DATABASE_URL)) {
-  const fallbackUrl = firstNonEmpty(
-    process.env.DATABASE_PRIVATE_URL,
-    process.env.POSTGRES_URL,
-    process.env.POSTGRESQL_URL,
-    buildDatabaseUrlFromPgVars(),
-  );
+const currentDatabaseUrl = firstNonEmpty(process.env.DATABASE_URL);
+const fallbackUrl = firstNonEmpty(
+  process.env.DATABASE_PRIVATE_URL,
+  process.env.POSTGRES_URL,
+  process.env.POSTGRESQL_URL,
+  buildDatabaseUrlFromPgVars(),
+);
 
-  if (fallbackUrl) {
-    process.env.DATABASE_URL = fallbackUrl;
-  }
+const isRailwayRuntime = Boolean(firstNonEmpty(process.env.RAILWAY_ENVIRONMENT, process.env.RAILWAY_PROJECT_ID));
+const shouldReplacePlaceholder = isRailwayRuntime && isPlaceholderDatabaseUrl(currentDatabaseUrl) && Boolean(fallbackUrl);
+
+if ((!currentDatabaseUrl && fallbackUrl) || shouldReplacePlaceholder) {
+  process.env.DATABASE_URL = fallbackUrl;
 }
