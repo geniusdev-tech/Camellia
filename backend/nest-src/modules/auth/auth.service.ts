@@ -42,6 +42,14 @@ export class AuthService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
+    if (this.env.NODE_ENV === 'test') {
+      return;
+    }
+    // Keep startup resilient: admin bootstrap runs in background.
+    void this.initializeAdminWithRetry();
+  }
+
+  private async initializeAdminWithRetry(): Promise<void> {
     const maxRetries = 30;
     const retryDelayMs = 1000;
 
@@ -58,7 +66,7 @@ export class AuthService implements OnModuleInit {
       } catch (error) {
         if (attempt === maxRetries) {
           console.error('[AuthService] Failed to initialize admin user after', maxRetries, 'attempts:', error);
-          throw error;
+          return;
         }
         console.warn(`[AuthService] Failed to initialize admin user (attempt ${attempt}/${maxRetries}), retrying in ${retryDelayMs}ms...`);
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));

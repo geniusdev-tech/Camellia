@@ -18,7 +18,7 @@ async function runMigrations(): Promise<void> {
       execSync('npx prisma migrate deploy', { stdio: 'inherit' });
       console.log('[Database] Migrations completed successfully');
       return;
-    } catch (error) {
+    } catch {
       if (attempt === maxRetries) {
         console.error('[Database] Failed to run migrations after', maxRetries, 'attempts');
         return; // Don't crash the app — healthcheck must keep running
