@@ -9,21 +9,18 @@ import { AppConfig, parseEnv } from './common/config/env.schema';
 import { execSync } from 'child_process';
 
 async function runMigrations(): Promise<void> {
-  const maxRetries = 10;
-  const retryDelayMs = 3000;
+  const retryDelayMs = 5000;
+  let attempt = 0;
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  for (;;) {
+    attempt += 1;
     try {
-      console.log(`[Database] Running migrations (attempt ${attempt}/${maxRetries})...`);
+      console.log(`[Database] Running migrations (attempt ${attempt})...`);
       execSync('npx prisma migrate deploy', { stdio: 'inherit' });
       console.log('[Database] Migrations completed successfully');
       return;
     } catch {
-      if (attempt === maxRetries) {
-        console.error('[Database] Failed to run migrations after', maxRetries, 'attempts');
-        return; // Don't crash the app — healthcheck must keep running
-      }
-      console.warn(`[Database] Failed to run migrations (attempt ${attempt}/${maxRetries}), retrying in ${retryDelayMs}ms...`);
+      console.warn(`[Database] Failed to run migrations (attempt ${attempt}), retrying in ${retryDelayMs}ms...`);
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
     }
   }

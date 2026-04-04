@@ -50,10 +50,11 @@ export class AuthService implements OnModuleInit {
   }
 
   private async initializeAdminWithRetry(): Promise<void> {
-    const maxRetries = 30;
-    const retryDelayMs = 1000;
+    const retryDelayMs = 5000;
+    let attempt = 0;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    for (;;) {
+      attempt += 1;
       try {
         const passwordHash = await bcrypt.hash(this.env.ADMIN_PASSWORD, 12);
         await this.prisma.user.upsert({
@@ -64,11 +65,7 @@ export class AuthService implements OnModuleInit {
         console.log('[AuthService] Admin user initialized successfully');
         return;
       } catch (error) {
-        if (attempt === maxRetries) {
-          console.error('[AuthService] Failed to initialize admin user after', maxRetries, 'attempts:', error);
-          return;
-        }
-        console.warn(`[AuthService] Failed to initialize admin user (attempt ${attempt}/${maxRetries}), retrying in ${retryDelayMs}ms...`);
+        console.warn(`[AuthService] Failed to initialize admin user (attempt ${attempt}), retrying in ${retryDelayMs}ms...`, error);
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
     }
