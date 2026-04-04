@@ -3,8 +3,9 @@ WORKDIR /app/backend
 COPY backend/package*.json ./
 RUN npm install
 COPY backend/ ./
-RUN npm run prisma:generate
-RUN npm run build
+RUN echo "DATABASE_URL=postgresql://dummy:dummy@localhost/dummy" > .env && \
+    npm run prisma:generate && \
+    npm run build
 
 FROM node:20-alpine AS runtime
 WORKDIR /app/backend
