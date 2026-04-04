@@ -14,5 +14,6 @@ COPY --from=build /app/backend/package*.json ./
 RUN npm install --omit=dev
 COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/backend/prisma ./prisma
+COPY --from=build /app/backend/.prisma ./.prisma
 EXPOSE 5000
 CMD ["node", "dist/main.js"]
