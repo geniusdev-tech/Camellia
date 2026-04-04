@@ -4,7 +4,7 @@
   "version": "2.1.0",
   "scripts": {
     "dev": "next dev -p 3000",
-    "dev:vercel-backend": "NEXT_PUBLIC_API_BASE_URL=https://gatestack.vercel.app next dev -p 3000",
+    "dev:vercel-backend": "NEXT_PUBLIC_API_BASE_URL=https://gatestack-backend-production.up.railway.app next dev -p 3000",
     "build": "next build",
     "start": "next start",
     "lint": "npm run type-check",

@@ -30,6 +30,24 @@ const seeds = [
   },
 ];
 
+const communitySeeds = [
+  {
+    slug: 'security-watch',
+    name: 'Security Watch',
+    description: 'Triagem contínua de segurança e compliance.',
+  },
+  {
+    slug: 'release-ops',
+    name: 'Release Ops',
+    description: 'Publicação, rollback e estabilidade operacional.',
+  },
+  {
+    slug: 'team-hub',
+    name: 'Team Hub',
+    description: 'Colaboração entre times e governança de acesso.',
+  },
+];
+
 async function main() {
   const adminEmail = String(process.env.ADMIN_EMAIL || 'admin@gatestack.local').toLowerCase();
   const adminPassword = String(process.env.ADMIN_PASSWORD || 'ChangeMeNow_12345');
@@ -63,6 +81,32 @@ async function main() {
       },
       update: item,
       create: item,
+    });
+  }
+
+  await prisma.socialCommunity.createMany({
+    data: communitySeeds,
+    skipDuplicates: true,
+  });
+
+  const releases = await prisma.release.findMany({
+    select: { id: true, packageName: true, packageVersion: true, releaseChannel: true, deploymentEnv: true },
+  });
+  const existingPosts = await prisma.socialPost.findMany({
+    where: { releaseId: { in: releases.map((release) => release.id) } },
+    select: { releaseId: true },
+  });
+  const existing = new Set(existingPosts.map((row) => row.releaseId));
+  const missingPosts = releases
+    .filter((release) => !existing.has(release.id))
+    .map((release) => ({
+      releaseId: release.id,
+      content: `Nova release ${release.packageName}@${release.packageVersion} (${release.releaseChannel}/${release.deploymentEnv}).`,
+    }));
+  if (missingPosts.length) {
+    await prisma.socialPost.createMany({
+      data: missingPosts,
+      skipDuplicates: true,
     });
   }
 

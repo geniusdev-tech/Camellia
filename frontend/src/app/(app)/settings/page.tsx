@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 import { motion } from 'framer-motion'
 import {
   Shield, ShieldCheck, ShieldX, QrCode, AlertTriangle,
@@ -169,104 +170,139 @@ export default function SettingsPage() {
   ]
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-10 h-10 rounded-2xl bg-primary-600/20 flex items-center justify-center">
-          <Shield className="w-5 h-5 text-primary-400" />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold text-white font-display">Conta e preferências</h1>
-          <p className="text-xs text-gray-500">Ajuste acesso, proteção da conta e sinais do repositório</p>
-        </div>
-      </div>
-
-      {/* Toast */}
-      {feedback && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0 }}
-          className={`p-3 rounded-xl text-sm border ${
-            feedback.type === 'ok'
-              ? 'bg-accent/10 border-accent/20 text-accent'
-              : 'bg-danger/10 border-danger/20 text-danger'
-          }`}
-        >
-          {feedback.msg}
-        </motion.div>
-      )}
-
-      {/* Sections */}
-      {sections.map((sec) => (
-        <section key={sec.id} className="glass rounded-2xl p-5 shadow-panel">
-          <div className="flex items-center gap-2 mb-4 pb-4 border-b border-white/[0.05]">
-            <sec.icon className="w-4 h-4 text-gray-400" />
-            <h2 className="text-sm font-semibold text-white">{sec.title}</h2>
-          </div>
-          {sec.content}
-        </section>
-      ))}
-
-      {/* Danger zone */}
-      <section className="rounded-2xl p-5 border border-danger/30 bg-danger/5">
-        <div className="flex items-center gap-2 mb-4">
-          <AlertTriangle className="w-4 h-4 text-danger" />
-          <h2 className="text-sm font-semibold text-danger">Zona de Emergência</h2>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-white font-medium">Panic Wipe</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Encerra a sessão e zera chaves da memória imediatamente.
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              if (confirm('EMERGÊNCIA: Encerrar sessão agora?')) {
-                authAPI.logout().catch(() => {}).finally(() => {
-                  useAuthStore.getState().logout()
-                  window.location.href = '/login'
-                })
-              }
-            }}
-            className="shrink-0 px-4 py-2 rounded-xl bg-danger text-white text-sm font-bold hover:bg-danger-dark transition-all shadow-lg"
-          >
-            EXECUTAR WIPE
-          </button>
-        </div>
+    <div className="social-page">
+      <section className="social-hero">
+        <p className="text-xs font-mono uppercase tracking-[0.2em] text-cyan-300">Feed da Conta</p>
+        <h1 className="mt-2 text-3xl font-bold text-white">Conta, segurança e sessões</h1>
+        <p className="mt-2 max-w-3xl text-sm text-gray-400">Controle 2FA, notificações, criptografia e ações sensíveis em um fluxo único.</p>
       </section>
 
-      <section className="glass rounded-2xl p-5 shadow-panel">
-        <div className="flex items-center gap-2 mb-4 pb-4 border-b border-white/[0.05]">
-          <RefreshCw className="w-4 h-4 text-gray-400" />
-          <h2 className="text-sm font-semibold text-white">Sessões</h2>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-white font-medium">Logout global</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Revoga todas as sessões de refresh token persistidas no backend.
-            </p>
+      <section className="social-layout">
+        <aside className="space-y-4">
+          <div className="social-side-card">
+            <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Acesso rápido</p>
+            <div className="mt-3 space-y-2 text-sm text-gray-200">
+              <Link href="/dashboard" className="block rounded-2xl bg-white/5 px-3 py-2 hover:bg-white/10">Voltar ao dashboard</Link>
+              <Link href="/teams" className="block rounded-2xl bg-white/5 px-3 py-2 hover:bg-white/10">Gerir times</Link>
+              <Link href="/ops" className="block rounded-2xl bg-white/5 px-3 py-2 hover:bg-white/10">Painel de operações</Link>
+            </div>
           </div>
-          <button
-            onClick={async () => {
-              setLoading(true)
-              try {
-                const res = await authAPI.logoutAll()
-                if (res.success) toast('ok', 'Todas as sessões foram encerradas.')
-                else toast('err', res.msg || 'Erro ao encerrar sessões.')
-              } catch {
-                toast('err', 'Erro de rede')
-              } finally {
-                setLoading(false)
-              }
-            }}
-            className="shrink-0 px-4 py-2 rounded-xl bg-primary-600/20 border border-primary-500/20 text-primary-200 text-sm font-medium"
-          >
-            Encerrar tudo
-          </button>
-        </div>
+          <div className="social-side-card">
+            <div className="inline-flex items-center gap-2 text-sm text-white">
+              <ShieldCheck className="h-4 w-4 text-cyan-300" />
+              Postura de segurança
+            </div>
+            <p className="mt-2 text-xs text-gray-500">Mantenha 2FA ativo e use logout global após alterações de credenciais.</p>
+          </div>
+        </aside>
+
+        <main className="space-y-5">
+          {feedback && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className={`p-3 rounded-xl text-sm border ${
+                feedback.type === 'ok'
+                  ? 'bg-accent/10 border-accent/20 text-accent'
+                  : 'bg-danger/10 border-danger/20 text-danger'
+              }`}
+            >
+              {feedback.msg}
+            </motion.div>
+          )}
+
+          {sections.map((sec) => (
+            <section key={sec.id} className="glass rounded-2xl p-5 shadow-panel">
+              <div className="flex items-center gap-2 mb-4 pb-4 border-b border-white/[0.05]">
+                <sec.icon className="w-4 h-4 text-gray-400" />
+                <h2 className="text-sm font-semibold text-white">{sec.title}</h2>
+              </div>
+              {sec.content}
+            </section>
+          ))}
+
+          <section className="rounded-2xl p-5 border border-danger/30 bg-danger/5">
+            <div className="flex items-center gap-2 mb-4">
+              <AlertTriangle className="w-4 h-4 text-danger" />
+              <h2 className="text-sm font-semibold text-danger">Zona de Emergência</h2>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-white font-medium">Limpeza de emergência</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Encerra a sessão e zera chaves da memória imediatamente.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (confirm('EMERGÊNCIA: Encerrar sessão agora?')) {
+                    authAPI.logout().catch(() => {}).finally(() => {
+                      useAuthStore.getState().logout()
+                      window.location.href = '/login'
+                    })
+                  }
+                }}
+                className="shrink-0 px-4 py-2 rounded-xl bg-danger text-white text-sm font-bold hover:bg-danger-dark transition-all shadow-lg"
+              >
+                EXECUTAR WIPE
+              </button>
+            </div>
+          </section>
+
+          <section className="glass rounded-2xl p-5 shadow-panel">
+            <div className="flex items-center gap-2 mb-4 pb-4 border-b border-white/[0.05]">
+              <RefreshCw className="w-4 h-4 text-gray-400" />
+              <h2 className="text-sm font-semibold text-white">Sessões</h2>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-white font-medium">Logout global</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Revoga todas as sessões de refresh token persistidas no backend.
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  setLoading(true)
+                  try {
+                    const res = await authAPI.logoutAll()
+                    if (res.success) toast('ok', 'Todas as sessões foram encerradas.')
+                    else toast('err', res.msg || 'Erro ao encerrar sessões.')
+                  } catch {
+                    toast('err', 'Erro de rede')
+                  } finally {
+                    setLoading(false)
+                  }
+                }}
+                className="shrink-0 px-4 py-2 rounded-xl bg-primary-600/20 border border-primary-500/20 text-primary-200 text-sm font-medium"
+              >
+                Encerrar tudo
+              </button>
+            </div>
+          </section>
+        </main>
+
+        <aside className="space-y-4">
+          <div className="social-side-card">
+            <div className="inline-flex items-center gap-2">
+              <Bell className="h-4 w-4 text-orange-300" />
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Checklist</p>
+            </div>
+            <div className="mt-3 space-y-2 text-sm text-gray-200">
+              <div className="rounded-2xl bg-white/5 px-3 py-2">2FA habilitado</div>
+              <div className="rounded-2xl bg-white/5 px-3 py-2">Sessões revisadas</div>
+              <div className="rounded-2xl bg-white/5 px-3 py-2">Convites monitorados</div>
+            </div>
+          </div>
+          <div className="social-side-card">
+            <div className="inline-flex items-center gap-2 text-sm text-white">
+              <Key className="h-4 w-4 text-cyan-300" />
+              Criptografia
+            </div>
+            <p className="mt-2 text-xs text-gray-500">Revise periodicamente política de chaves e parâmetros de KDF.</p>
+          </div>
+        </aside>
       </section>
 
       {/* 2FA Modal */}

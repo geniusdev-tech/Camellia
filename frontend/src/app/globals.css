@@ -196,4 +196,10 @@
   
   /* Grid layout */
   .container { @apply mx-auto max-w-7xl; }
+
+  /* Social shell primitives */
+  .social-page { @apply mx-auto max-w-7xl px-4 py-6 lg:px-6; }
+  .social-hero { @apply mb-6 rounded-3xl border border-white/10 bg-dark-900/50 p-5 backdrop-blur; }
+  .social-layout { @apply grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)_280px]; }
+  .social-side-card { @apply rounded-3xl border border-white/10 bg-dark-900/60 p-4; }
 }

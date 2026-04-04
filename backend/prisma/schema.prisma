@@ -32,6 +32,12 @@ enum UserRole {
   reader
 }
 
+enum ReactionType {
+  like
+  insight
+  celebrate
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -39,6 +45,13 @@ model User {
   role         UserRole @default(reader)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
+
+  socialPosts         SocialPost[]            @relation("SocialPostAuthor")
+  socialReactions     SocialReaction[]
+  socialComments      SocialComment[]
+  socialBookmarks     SocialBookmark[]
+  socialReposts       SocialRepost[]
+  communityMembership SocialCommunityMember[]
 
   @@map("users")
 }
@@ -59,8 +72,112 @@ model Release {
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
+  socialPost      SocialPost?
+
   @@index([packageName, packageVersion])
   @@index([packageName, releaseChannel, status])
   @@unique([packageName, packageVersion])
   @@map("releases")
+}
+
+model SocialPost {
+  id        String   @id @default(uuid())
+  releaseId String   @unique @map("release_id")
+  authorId  String?  @map("author_id")
+  content   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  release   Release          @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  author    User?            @relation("SocialPostAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  reactions SocialReaction[]
+  comments  SocialComment[]
+  bookmarks SocialBookmark[]
+  reposts   SocialRepost[]
+
+  @@index([createdAt])
+  @@map("social_posts")
+}
+
+model SocialReaction {
+  id           String       @id @default(uuid())
+  postId       String       @map("post_id")
+  userId       String       @map("user_id")
+  reactionType ReactionType @default(like) @map("reaction_type")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  post SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([postId, reactionType])
+  @@map("social_reactions")
+}
+
+model SocialComment {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  userId    String   @map("user_id")
+  text      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@map("social_comments")
+}
+
+model SocialBookmark {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+  @@map("social_bookmarks")
+}
+
+model SocialRepost {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([postId, createdAt])
+  @@map("social_reposts")
+}
+
+model SocialCommunity {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  members SocialCommunityMember[]
+
+  @@map("social_communities")
+}
+
+model SocialCommunityMember {
+  id          String   @id @default(uuid())
+  communityId String   @map("community_id")
+  userId      String   @map("user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  community SocialCommunity @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+  @@index([userId, createdAt])
+  @@map("social_community_members")
 }

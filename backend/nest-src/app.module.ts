@@ -10,6 +10,7 @@ import { QueueModule } from './modules/queue/queue.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { parseEnv } from './common/config/env.schema';
 import { AuthModule } from './modules/auth/auth.module';
+import { SocialModule } from './modules/social/social.module';
 
 const env = parseEnv(process.env);
 
@@ -59,6 +60,7 @@ const env = parseEnv(process.env);
     AuthModule,
     HealthModule,
     ReleasesModule,
+    SocialModule,
     MetricsModule,
     QueueModule,
   ],
