@@ -36,14 +36,26 @@ services:
       
       # Redis
       - key: REDIS_HOST
-        value: "redis"
+        fromService:
+          name: gatestack-redis
+          type: redis
+          property: host
       - key: REDIS_PORT
-        value: "6379"
+        fromService:
+          name: gatestack-redis
+          type: redis
+          property: port
       
       # Database (definido automaticamente)
       - key: DATABASE_URL
         fromDatabase:
           name: gatestack-db
+
+  - type: redis
+    name: gatestack-redis
+    plan: starter
+    region: us-east-1
+    maxmemoryPolicy: noeviction
 
 databases:
   - type: postgres

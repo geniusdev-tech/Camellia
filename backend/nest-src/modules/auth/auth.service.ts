@@ -42,12 +42,28 @@ export class AuthService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    const passwordHash = await bcrypt.hash(this.env.ADMIN_PASSWORD, 12);
-    await this.prisma.user.upsert({
-      where: { email: this.env.ADMIN_EMAIL.toLowerCase() },
-      update: { passwordHash, role: 'admin' },
-      create: { email: this.env.ADMIN_EMAIL.toLowerCase(), passwordHash, role: 'admin' },
-    });
+    const maxRetries = 30;
+    const retryDelayMs = 1000;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const passwordHash = await bcrypt.hash(this.env.ADMIN_PASSWORD, 12);
+        await this.prisma.user.upsert({
+          where: { email: this.env.ADMIN_EMAIL.toLowerCase() },
+          update: { passwordHash, role: 'admin' },
+          create: { email: this.env.ADMIN_EMAIL.toLowerCase(), passwordHash, role: 'admin' },
+        });
+        console.log('[AuthService] Admin user initialized successfully');
+        return;
+      } catch (error) {
+        if (attempt === maxRetries) {
+          console.error('[AuthService] Failed to initialize admin user after', maxRetries, 'attempts:', error);
+          throw error;
+        }
+        console.warn(`[AuthService] Failed to initialize admin user (attempt ${attempt}/${maxRetries}), retrying in ${retryDelayMs}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
   }
 
   async login(payload: LoginInput): Promise<{ accessToken: string }> {

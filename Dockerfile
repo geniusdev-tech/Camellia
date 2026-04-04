@@ -14,6 +14,6 @@ COPY --from=build /app/backend/package*.json ./
 RUN npm install --omit=dev
 COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/backend/prisma ./prisma
-RUN npm run prisma:generate
+COPY --from=build /app/backend/node_modules/.prisma ./node_modules/.prisma
 EXPOSE 5000
 CMD ["node", "dist/main.js"]
