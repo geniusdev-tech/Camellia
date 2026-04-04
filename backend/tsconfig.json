@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "CommonJS",
-    "moduleResolution": "Node",
+    "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
     "experimentalDecorators": true,
@@ -12,6 +12,7 @@
     "outDir": "dist",
     "rootDir": "nest-src",
     "resolveJsonModule": true,
+    "ignoreDeprecations": "5.0",
     "types": ["node"]
   },
   "include": ["nest-src/**/*.ts"]
