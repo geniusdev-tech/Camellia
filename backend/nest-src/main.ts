@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import 'reflect-metadata';
+import './common/config/bootstrap-env';
 import { Logger } from 'nestjs-pino';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
