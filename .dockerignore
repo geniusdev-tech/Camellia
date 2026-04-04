@@ -1,0 +1,101 @@
+# flyctl launch added from .gitignore
+# Python
+**/__pycache__
+**/*.py[cod]
+**/*.so
+**/.venv
+**/venv
+**/env
+**/build
+**/dist
+**/*.egg-info
+**/*.spec
+
+# Secrets & keys
+**/.env
+**/.env.local
+**/.env.production
+**/.env.staging
+**/.env.development.local
+**/.env.test.local
+**/.env.*.local
+**/.npmrc
+**/.firebase.json
+**/firebase.json
+**/kms.key
+**/*.key
+**/*.pem
+**/*.crt
+**/*.p12
+**/.audit_signing_key
+**/.manifest_signing_key*
+**/.ssl
+**/*.keystore
+**/*.pfx
+
+# Logs / databases
+**/audit.log
+**/*.log
+**/logs
+**/history.json
+**/users.db
+**/*.db
+vault
+**/storage
+**/keys
+**/*.enc
+**/*.tmp
+**/*.bak
+**/*.backup
+**/dump.rdb
+
+# Node / Next.js
+**/frontend/node_modules
+**/backend/node_modules
+**/frontend/.next
+**/frontend/out
+**/frontend/tsconfig.tsbuildinfo
+**/node_modules
+**/dist
+**/build
+**/.next
+**/out
+
+# Rust / Tauri
+**/src-tauri/target
+**/src-tauri/Cargo.lock
+**/src-tauri/binaries/gatestack-backend*
+**/src-tauri/binaries/*.exe
+**/src-tauri/binaries/*.so
+**/src-tauri/binaries/*.dylib
+
+# OS
+**/.DS_Store
+**/Thumbs.db
+
+# Editor
+**/.vscode
+**/.idea
+
+# PyInstaller
+**/*.manifest
+
+# Secrets baseline
+**/.secrets.baseline
+
+# Local tooling
+**/.codex
+**/.vercel
+**/infra/vault/data
+
+# macOS / IDE specific
+**/.DS_Store
+**/Thumbs.db
+**/.vscode
+**/.idea
+**/*.swp
+**/*.swo
+**/*~
+**/.sublime-project
+**/.sublime-workspace
+fly.toml

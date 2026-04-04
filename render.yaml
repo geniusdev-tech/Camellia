@@ -45,22 +45,12 @@ services:
           type: redis
           property: port
       
-      # Database (definido automaticamente)
+      # Database (SET THIS MANUALLY FROM RENDER DASHBOARD)
       - key: DATABASE_URL
-        fromDatabase:
-          name: gatestack-db
+        sync: false
 
   - type: redis
     name: gatestack-redis
     plan: starter
     region: us-east-1
     maxmemoryPolicy: noeviction
-
-databases:
-  - type: postgres
-    name: gatestack-db
-    plan: starter
-    region: us-east-1
-    disk: 10
-    username: gatestack_user
-    database: gatestack_db
