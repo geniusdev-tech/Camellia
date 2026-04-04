@@ -22,6 +22,18 @@ services:
       # Frontend URL
       - key: ALLOWED_ORIGIN
         value: "http://localhost:3000"
+
+      # Auth / Security
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: "1h"
+      - key: ADMIN_EMAIL
+        value: "admin@gatestack.local"
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: METRICS_TOKEN
+        generateValue: true
       
       # Rate Limiting
       - key: THROTTLE_TTL
@@ -45,12 +57,21 @@ services:
           type: redis
           property: port
       
-      # Database (SET THIS MANUALLY FROM RENDER DASHBOARD)
+      # Database (auto-wired from managed PostgreSQL below)
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: gatestack-db
+          property: connectionString
 
   - type: redis
     name: gatestack-redis
     plan: starter
     region: us-east-1
     maxmemoryPolicy: noeviction
+
+databases:
+  - name: gatestack-db
+    plan: starter
+    region: us-east-1
+    databaseName: gatestack
+    user: gatestack
