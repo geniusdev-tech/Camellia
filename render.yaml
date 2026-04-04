@@ -7,7 +7,6 @@ services:
     branch: main
     dockerfile: Dockerfile
     healthCheckPath: /health
-    preDeployCommand: npm run prisma:migrate:deploy
     
     envVars:
       # Node & Core
