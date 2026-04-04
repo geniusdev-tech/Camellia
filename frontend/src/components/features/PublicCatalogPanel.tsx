@@ -116,7 +116,7 @@ export function PublicCatalogPanel() {
                     </div>
                     <button
                       onClick={() => downloadMutation.mutate({ packageName: version.package_name, version: version.package_version })}
-                      className="inline-flex items-center gap-2 rounded-xl bg-accent px-3 py-2 text-xs font-medium text-dark-950"
+                      className="h-btn-primary text-xs"
                     >
                       <Rocket className="h-3.5 w-3.5" />
                       Download

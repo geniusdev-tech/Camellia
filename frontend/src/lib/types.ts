@@ -284,3 +284,61 @@ export interface CreateReleaseRequest {
 export interface CreateReleaseResponse extends ApiResponse {
   release: GateRelease
 }
+
+export type SocialReactionType = 'like' | 'insight' | 'celebrate'
+
+export interface SocialFeedPost {
+  id: string
+  createdAt: string
+  content: string
+  release: {
+    id: string
+    packageName: string
+    packageVersion: string
+    releaseChannel: string
+    deploymentEnv: string
+    status: string
+  }
+  author: { id: string; email: string } | null
+  stats: {
+    reactions: Record<SocialReactionType, number>
+    comments: number
+    reposts: number
+    bookmarks: number
+  }
+  viewer: {
+    reactionType: SocialReactionType | null
+    bookmarked: boolean
+    reposted: boolean
+  }
+}
+
+export interface SocialFeedResponse extends ApiResponse {
+  posts: SocialFeedPost[]
+}
+
+export interface SocialSidebarCommunity {
+  id: string
+  slug: string
+  name: string
+  description?: string | null
+  members: number
+  joined: boolean
+}
+
+export interface SocialSidebarTrend {
+  tag: string
+  count: number
+}
+
+export interface SocialSuggestedUser {
+  id: string
+  email: string
+  role: string
+}
+
+export interface SocialSidebarResponse extends ApiResponse {
+  communities: SocialSidebarCommunity[]
+  trends: SocialSidebarTrend[]
+  suggestedUsers: SocialSuggestedUser[]
+}

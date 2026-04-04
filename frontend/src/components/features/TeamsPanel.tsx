@@ -114,7 +114,7 @@ export function TeamsPanel() {
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
                   placeholder="platform-core"
-                  className="w-full rounded-xl border border-white/10 bg-dark-950/60 px-3 py-2 text-white outline-none"
+                  className="h-input"
                 />
                 <button
                   onClick={() => createTeam.mutate(teamName)}
@@ -184,7 +184,7 @@ export function TeamsPanel() {
                 <select
                   value={grantProjectId}
                   onChange={(e) => setGrantProjectId(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-dark-950/60 px-3 py-2 text-white outline-none"
+                  className="h-input"
                 >
                   <option value="">Projeto</option>
                   {projects.map((project) => (
@@ -196,7 +196,7 @@ export function TeamsPanel() {
                 <select
                   value={grantTeamId}
                   onChange={(e) => setGrantTeamId(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-dark-950/60 px-3 py-2 text-white outline-none"
+                  className="h-input"
                 >
                   <option value="">Time</option>
                   {teams.map((team) => (
@@ -277,7 +277,7 @@ export function TeamsPanel() {
         onClose={() => setInviteModalOpen(false)}
         footer={(
           <>
-            <button onClick={() => setInviteModalOpen(false)} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white">Cancelar</button>
+            <button onClick={() => setInviteModalOpen(false)} className="h-btn">Cancelar</button>
             <button
               onClick={() => selectedTeam && createInvite.mutate({
                 teamId: selectedTeam.id,
@@ -285,7 +285,7 @@ export function TeamsPanel() {
                 role: inviteForm.role,
                 expiresAt: inviteForm.expiresAt ? new Date(inviteForm.expiresAt).toISOString() : undefined,
               })}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-dark-950"
+              className="h-btn-primary"
             >
               Criar convite
             </button>
@@ -298,7 +298,7 @@ export function TeamsPanel() {
             <input
               value={inviteForm.email}
               onChange={(event) => setInviteForm((state) => ({ ...state, email: event.target.value }))}
-              className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+              className="h-input"
             />
           </label>
           <label className="space-y-1 text-sm">
@@ -306,7 +306,7 @@ export function TeamsPanel() {
             <select
               value={inviteForm.role}
               onChange={(event) => setInviteForm((state) => ({ ...state, role: event.target.value }))}
-              className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+              className="h-input"
             >
               <option value="member">member</option>
               <option value="manager">manager</option>
@@ -318,7 +318,7 @@ export function TeamsPanel() {
               type="datetime-local"
               value={inviteForm.expiresAt}
               onChange={(event) => setInviteForm((state) => ({ ...state, expiresAt: event.target.value }))}
-              className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+              className="h-input"
             />
           </label>
         </div>

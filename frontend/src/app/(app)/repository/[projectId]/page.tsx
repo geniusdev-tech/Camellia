@@ -25,8 +25,8 @@ export default async function RepositoryDetailPage({
           <div className="social-side-card">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Ações</p>
             <div className="mt-3 space-y-2 text-sm text-gray-200">
-              <Link href="/repository" className="block rounded-2xl bg-white/5 px-3 py-2 hover:bg-white/10">Voltar para lista</Link>
-              <Link href="/ops" className="block rounded-2xl bg-white/5 px-3 py-2 hover:bg-white/10">Abrir operações</Link>
+              <Link href="/repository" className="social-link">Voltar para lista</Link>
+              <Link href="/ops" className="social-link">Abrir operações</Link>
             </div>
           </div>
           <div className="social-side-card">
@@ -50,9 +50,9 @@ export default async function RepositoryDetailPage({
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Sinais</p>
             </div>
             <div className="mt-3 space-y-2 text-sm text-gray-200">
-              <div className="rounded-2xl bg-white/5 px-3 py-2">#release-quality</div>
-              <div className="rounded-2xl bg-white/5 px-3 py-2">#pipeline-status</div>
-              <div className="rounded-2xl bg-white/5 px-3 py-2">#acl-review</div>
+              <div className="social-tile">#release-quality</div>
+              <div className="social-tile">#pipeline-status</div>
+              <div className="social-tile">#acl-review</div>
             </div>
           </div>
           <div className="social-side-card">

@@ -21,6 +21,9 @@ import type {
   ReleasesListResponse,
   RegisterRequest,
   Setup2FAResponse,
+  SocialFeedResponse,
+  SocialReactionType,
+  SocialSidebarResponse,
   TeamCreateResponse,
   TeamInviteResponse,
   TeamListResponse,
@@ -453,6 +456,44 @@ export const publicPackagesAPI = {
       `/api/public/packages/${encodeURIComponent(packageName)}/versions/${encodeURIComponent(version)}/download${queryString({ expires_in: expiresIn })}`,
       undefined,
       { skipAuthRefresh: true },
+    ),
+}
+
+export const socialAPI = {
+  feed: () =>
+    fetchAPI<SocialFeedResponse>('/api/social/feed'),
+
+  sidebar: () =>
+    fetchAPI<SocialSidebarResponse>('/api/social/sidebar'),
+
+  react: (postId: string, reactionType: SocialReactionType) =>
+    fetchAPI<ApiResponse & { postId: string; reactionType: SocialReactionType }>(
+      `/api/social/posts/${encodeURIComponent(postId)}/reaction`,
+      { method: 'POST', body: JSON.stringify({ reactionType }) },
+    ),
+
+  comment: (postId: string, text: string) =>
+    fetchAPI<ApiResponse & { comment: { id: string; text: string; createdAt: string } }>(
+      `/api/social/posts/${encodeURIComponent(postId)}/comment`,
+      { method: 'POST', body: JSON.stringify({ text }) },
+    ),
+
+  bookmarkToggle: (postId: string) =>
+    fetchAPI<ApiResponse & { postId: string; bookmarked: boolean }>(
+      `/api/social/posts/${encodeURIComponent(postId)}/bookmark`,
+      { method: 'POST' },
+    ),
+
+  repostToggle: (postId: string) =>
+    fetchAPI<ApiResponse & { postId: string; reposted: boolean }>(
+      `/api/social/posts/${encodeURIComponent(postId)}/repost`,
+      { method: 'POST' },
+    ),
+
+  communityToggle: (communityId: string) =>
+    fetchAPI<ApiResponse & { communityId: string; joined: boolean }>(
+      `/api/social/communities/${encodeURIComponent(communityId)}/toggle`,
+      { method: 'POST' },
     ),
 }
 

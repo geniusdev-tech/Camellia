@@ -82,7 +82,7 @@ export function OpsPanel() {
               <select
                 value={projectId}
                 onChange={(e) => setProjectId(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-dark-950/60 px-3 py-2 text-white outline-none"
+                className="h-input"
               >
                 <option value="">Selecione um projeto</option>
                 {projects.map((project) => (
@@ -102,7 +102,7 @@ export function OpsPanel() {
                 {isOwner ? (
                   <button
                     onClick={() => publishMutation.mutate(projectId)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-dark-950"
+                    className="h-btn-primary"
                   >
                     <PlayCircle className="h-4 w-4" />
                     Publish async

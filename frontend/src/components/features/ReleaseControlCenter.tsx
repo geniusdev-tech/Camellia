@@ -135,7 +135,7 @@ export function ReleaseControlCenter() {
             <input
               value={form.packageName}
               onChange={(e) => setForm((s) => ({ ...s, packageName: e.target.value }))}
-              className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+              className="h-input"
               placeholder="security-kit"
             />
           </label>
@@ -145,7 +145,7 @@ export function ReleaseControlCenter() {
             <input
               value={form.packageVersion}
               onChange={(e) => setForm((s) => ({ ...s, packageVersion: e.target.value }))}
-              className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+              className="h-input"
               placeholder="1.0.0"
             />
           </label>
@@ -156,7 +156,7 @@ export function ReleaseControlCenter() {
               <select
                 value={form.releaseChannel}
                 onChange={(e) => setForm((s) => ({ ...s, releaseChannel: e.target.value as ReleaseChannel }))}
-                className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+                className="h-input"
               >
                 <option value="alpha">alpha</option>
                 <option value="beta">beta</option>
@@ -169,7 +169,7 @@ export function ReleaseControlCenter() {
               <select
                 value={form.deploymentEnv}
                 onChange={(e) => setForm((s) => ({ ...s, deploymentEnv: e.target.value as DeploymentEnv }))}
-                className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+                className="h-input"
               >
                 <option value="dev">dev</option>
                 <option value="staging">staging</option>
@@ -188,7 +188,7 @@ export function ReleaseControlCenter() {
                 step={0.1}
                 value={form.maxCvss}
                 onChange={(e) => setForm((s) => ({ ...s, maxCvss: Number(e.target.value) }))}
-                className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+                className="h-input"
               />
             </label>
 
@@ -200,7 +200,7 @@ export function ReleaseControlCenter() {
                 max={100}
                 value={form.complianceScore}
                 onChange={(e) => setForm((s) => ({ ...s, complianceScore: Number(e.target.value) }))}
-                className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+                className="h-input"
               />
             </label>
 
@@ -212,7 +212,7 @@ export function ReleaseControlCenter() {
                 max={100}
                 value={form.riskScore}
                 onChange={(e) => setForm((s) => ({ ...s, riskScore: Number(e.target.value) }))}
-                className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+                className="h-input"
               />
             </label>
           </div>

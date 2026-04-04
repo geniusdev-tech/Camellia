@@ -43,12 +43,12 @@ export function TauriStatus({ className }: Props) {
       title={title}
       className={clsx(
         degraded
-          ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-[10px] font-medium text-amber-200'
-          : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/10 border border-accent/20 text-[10px] font-medium text-accent',
+          ? 'inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-amber-200'
+          : 'inline-flex items-center gap-1 rounded-full border border-cyan-400/40 bg-cyan-400/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-cyan-300',
         className,
       )}
     >
-      <span className={clsx('w-1.5 h-1.5 rounded-full animate-pulse', degraded ? 'bg-amber-300' : 'bg-accent')} />
+      <span className={clsx('h-1.5 w-1.5 rounded-full animate-pulse', degraded ? 'bg-amber-300' : 'bg-cyan-300')} />
       {degraded ? 'Desktop com falha' : 'Desktop'}
     </span>
   )

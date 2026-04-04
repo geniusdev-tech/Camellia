@@ -11,14 +11,14 @@ function Stat({ icon: Icon, label, value, sub, accent = false }: {
   accent?: boolean
 }) {
   return (
-    <div className="glass flex items-center gap-4 rounded-2xl px-5 py-4 shadow-panel">
+    <div className="glass scanline-overlay flex items-center gap-4 rounded-2xl px-5 py-4 shadow-panel">
       <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accent ? 'bg-accent/15 text-accent' : 'bg-primary-600/15 text-primary-400'}`}>
         <Icon className="h-5 w-5" />
       </div>
       <div>
-        <p className="text-xs font-medium text-gray-500">{label}</p>
+        <p className="font-mono text-xs font-medium uppercase tracking-widest text-gray-500">{label}</p>
         <p className="text-lg font-bold leading-tight text-white">{value}</p>
-        {sub ? <p className="mt-0.5 text-[10px] text-gray-600">{sub}</p> : null}
+        {sub ? <p className="mt-0.5 font-mono text-[10px] text-green-300/70">{sub}</p> : null}
       </div>
     </div>
   )

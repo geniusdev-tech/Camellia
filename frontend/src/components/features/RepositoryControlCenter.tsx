@@ -233,7 +233,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
               <select
                 value={statusFilter}
                 onChange={(e) => replaceQuery({ status: e.target.value, page: 1 })}
-                className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+                className="h-input"
               >
                 <option value="">todos</option>
                 <option value="draft">draft</option>
@@ -250,7 +250,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
               <select
                 value={visibilityFilter}
                 onChange={(e) => replaceQuery({ visibility: e.target.value, page: 1 })}
-                className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+                className="h-input"
               >
                 <option value="">todas</option>
                 <option value="private">private</option>
@@ -346,7 +346,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   <button
                     onClick={() => downloadMutation.mutate(detail.id)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-dark-950"
+                    className="h-btn-primary"
                   >
                     <ArrowDownToLine className="h-4 w-4" />
                     Download
@@ -363,13 +363,13 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   <button
                     onClick={() => setMetadataModalOpen(true)}
-                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white"
+                    className="h-btn"
                   >
                     Editar metadata
                   </button>
                   <button
                     onClick={() => setShareModalOpen(true)}
-                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white"
+                    className="h-btn"
                   >
                     Configurar grants
                   </button>
@@ -486,7 +486,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
         onClose={() => setStatusModalOpen(false)}
         footer={(
           <>
-            <button onClick={() => setStatusModalOpen(false)} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white">Cancelar</button>
+            <button onClick={() => setStatusModalOpen(false)} className="h-btn">Cancelar</button>
             <button
               onClick={() => detail && updateMutation.mutate({
                 projectId: detail.id,
@@ -495,7 +495,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
                   status_reason: statusReason || undefined,
                 },
               })}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-dark-950"
+              className="h-btn-primary"
             >
               Aplicar
             </button>
@@ -508,7 +508,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
             value={statusReason}
             onChange={(event) => setStatusReason(event.target.value)}
             rows={4}
-            className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+            className="h-input"
           />
         </label>
       </Modal>
@@ -519,7 +519,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
         onClose={() => setMetadataModalOpen(false)}
         footer={(
           <>
-            <button onClick={() => setMetadataModalOpen(false)} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white">Cancelar</button>
+            <button onClick={() => setMetadataModalOpen(false)} className="h-btn">Cancelar</button>
             <button
               onClick={() => {
                 if (!detail) return
@@ -537,7 +537,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
                   setFeedback({ tone: 'error', message: 'Metadata deve ser JSON válido.' })
                 }
               }}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-dark-950"
+              className="h-btn-primary"
             >
               Salvar
             </button>
@@ -550,7 +550,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
             <input
               value={metadataForm.description}
               onChange={(event) => setMetadataForm((state) => ({ ...state, description: event.target.value }))}
-              className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+              className="h-input"
             />
           </label>
           <label className="space-y-1 text-sm">
@@ -559,7 +559,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
               value={metadataForm.changelog}
               onChange={(event) => setMetadataForm((state) => ({ ...state, changelog: event.target.value }))}
               rows={3}
-              className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+              className="h-input"
             />
           </label>
           <label className="space-y-1 text-sm">
@@ -568,7 +568,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
               value={metadataForm.metadata}
               onChange={(event) => setMetadataForm((state) => ({ ...state, metadata: event.target.value }))}
               rows={8}
-              className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 font-mono text-xs text-white outline-none"
+              className="h-input font-mono text-xs"
             />
           </label>
         </div>
@@ -580,7 +580,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
         onClose={() => setShareModalOpen(false)}
         footer={(
           <>
-            <button onClick={() => setShareModalOpen(false)} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white">Cancelar</button>
+            <button onClick={() => setShareModalOpen(false)} className="h-btn">Cancelar</button>
             <button
               onClick={() => {
                 if (!detail) return
@@ -600,7 +600,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
                   },
                 })
               }}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-dark-950"
+              className="h-btn-primary"
             >
               Salvar
             </button>
@@ -615,12 +615,12 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
                 value={grant.user_id}
                 onChange={(event) => setShareForm((state) => state.map((item, current) => current === index ? { ...item, user_id: Number(event.target.value) } : item))}
                 placeholder="user_id"
-                className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+                className="h-input"
               />
               <select
                 value={grant.grant_role}
                 onChange={(event) => setShareForm((state) => state.map((item, current) => current === index ? { ...item, grant_role: event.target.value } : item))}
-                className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+                className="h-input"
               >
                 <option value="viewer">viewer</option>
                 <option value="editor">editor</option>
@@ -629,7 +629,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
                 type="datetime-local"
                 value={grant.expires_at ? grant.expires_at.slice(0, 16) : ''}
                 onChange={(event) => setShareForm((state) => state.map((item, current) => current === index ? { ...item, expires_at: event.target.value ? new Date(event.target.value).toISOString() : null } : item))}
-                className="w-full rounded-xl border border-white/10 bg-dark-900/70 px-3 py-2 text-white outline-none"
+                className="h-input"
               />
               <button
                 onClick={() => setShareForm((state) => state.filter((_, current) => current !== index))}
@@ -641,7 +641,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
           ))}
           <button
             onClick={() => setShareForm((state) => [...state, { user_id: 0, grant_role: 'viewer', expires_at: null }])}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white"
+            className="h-btn"
           >
             Adicionar grant
           </button>
@@ -654,7 +654,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
         onClose={() => setDeleteModalOpen(false)}
         footer={(
           <>
-            <button onClick={() => setDeleteModalOpen(false)} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white">Cancelar</button>
+            <button onClick={() => setDeleteModalOpen(false)} className="h-btn">Cancelar</button>
             <button
               onClick={() => detail && deleteMutation.mutate(detail.id)}
               className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-2 text-sm font-medium text-rose-200"
