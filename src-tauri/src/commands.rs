@@ -1,7 +1,7 @@
 use crate::{BackendPort, DesktopRuntime, DesktopRuntimeStatus};
 use tauri::State;
 
-/// Returns the port the Flask backend is listening on.
+/// Returns the port the backend is listening on.
 #[tauri::command]
 pub fn get_backend_port(port: State<BackendPort>) -> u16 {
     port.inner().0.lock().map(|guard| *guard).unwrap_or(5000)
@@ -25,7 +25,7 @@ pub fn get_desktop_runtime_status(runtime: State<DesktopRuntime>) -> DesktopRunt
         })
 }
 
-/// Pings the Flask backend and returns whether it is healthy.
+/// Pings the backend and returns whether it is healthy.
 #[tauri::command]
 pub async fn check_backend_health(port: State<'_, BackendPort>) -> Result<bool, String> {
     let p = port

@@ -2,11 +2,9 @@
 #  GateStack — Build Automation
 # ─────────────────────────────────────────────────────
 .PHONY: help dev build build-win build-mac build-linux \
-        install install-py install-node \
-        bundle-backend db-migrate db-revision clean
+        install install-backend install-node \
+        bundle-backend clean docker-up docker-down docker-logs db-migrate db-seed
 
-VENV_DIR ?= .venv
-PYTHON   ?= $(if $(wildcard $(VENV_DIR)/bin/python),$(VENV_DIR)/bin/python,python3)
 NPM      ?= npm
 CARGO    ?= cargo
 TAURI    ?= npx --prefix frontend tauri
@@ -19,33 +17,34 @@ help:
 	@echo ""
 	@echo "  GateStack — Comandos disponíveis:"
 	@echo ""
-	@echo "  make install        — instala todas as dependências (Python + Node + Rust)"
-	@echo "  make dev            — inicia Next.js dev + Flask API side-by-side"
+	@echo "  make install        — instala dependências (backend TS + frontend + Rust)"
+	@echo "  make dev            — inicia backend Node/TS na 5000 + Next.js na 3000"
 	@echo "  make build          — empacota para o SO atual (Tauri + Next.js)"
 	@echo "  make build-win      — cross-compila para Windows (requer cross + MSVC)"
 	@echo "  make build-mac      — build macOS (requer XCode CLI + Codesign)"
 	@echo "  make build-linux    — build Linux (.deb, .rpm, .AppImage)"
-	@echo "  make bundle-backend — cria executável Python (PyInstaller)"
-	@echo "  make db-migrate     — aplica migrações Alembic"
-	@echo "  make db-revision    — cria revisão Alembic autogerada (MSG=...)"
+	@echo "  make bundle-backend — build do backend Node/TS para produção"
+	@echo "  make docker-up      — sobe stack completa Docker (backend, postgres, redis, nginx, prometheus, grafana)"
+	@echo "  make docker-down    — derruba stack Docker"
+	@echo "  make docker-logs    — acompanha logs da stack Docker"
+	@echo "  make db-migrate     — aplica migrações Prisma no DATABASE_URL"
+	@echo "  make db-seed        — executa seed Prisma no DATABASE_URL"
 	@echo "  make clean          — remove artefatos de build"
 	@echo ""
 
 # ── Install ───────────────────────────────────────────
-install: install-py install-node
+install: install-backend install-node
 	@echo "✓ Todas as dependências instaladas."
 
-install-py:
-	$(PYTHON) -m pip install --upgrade pip
-	$(PYTHON) -m pip install -r requirements.txt
-	$(PYTHON) -m pip install pyinstaller
+install-backend:
+	cd backend && $(NPM) install
 
 install-node:
 	cd frontend && $(NPM) ci
 
 # ── Development ───────────────────────────────────────
 dev:
-	@echo "→ Iniciando Flask na porta 5000 e Next.js na porta 3000…"
+	@echo "→ Iniciando backend Node/TS na porta 5000 e Next.js na porta 3000…"
 	@set -e; \
 	backend_pid=""; \
 	cleanup() { \
@@ -55,7 +54,7 @@ dev:
 		fi; \
 	}; \
 	trap cleanup EXIT INT TERM; \
-	FLASK_ENV=development FLASK_DEBUG=1 DESKTOP_MODE=1 PORT=$(PORT) $(PYTHON) app.py & \
+	NODE_ENV=development DESKTOP_MODE=1 PORT=$(PORT) $(NPM) --prefix backend run dev & \
 	backend_pid=$$!; \
 	cd frontend && $(NPM) run dev
 
@@ -70,37 +69,15 @@ dev-tauri:
 		fi; \
 	}; \
 	trap cleanup EXIT INT TERM; \
-	FLASK_ENV=development DESKTOP_MODE=1 PORT=$(PORT) $(PYTHON) app.py & \
+	NODE_ENV=development DESKTOP_MODE=1 PORT=$(PORT) $(NPM) --prefix backend run dev & \
 	backend_pid=$$!; \
 	PORT=$(PORT) $(TAURI) dev --config src-tauri/tauri.conf.json
 
-# ── Bundle Python backend → single binary ─────────────
+# ── Bundle backend TS ─────────────────────────────────
 bundle-backend:
-	@echo "→ Empacotando backend Python com PyInstaller…"
-	$(PYTHON) -m PyInstaller \
-	    --onefile \
-	    --name gatestack-backend \
-	    --add-data "core:core" \
-	    --add-data "api:api" \
-	    --add-data "config.py:." \
-	    --hidden-import argon2 \
-	    --hidden-import sqlalchemy \
-	    --hidden-import flask_talisman \
-	    --hidden-import flask_seasurf \
-	    --hidden-import flask_limiter \
-	    --distpath src-tauri/binaries \
-	    app.py
-	@if [ -n "$(HOST_TRIPLE)" ] && [ -f src-tauri/binaries/gatestack-backend ]; then \
-		cp src-tauri/binaries/gatestack-backend src-tauri/binaries/gatestack-backend-$(HOST_TRIPLE); \
-	fi
-	@echo "✓ src-tauri/binaries/gatestack-backend criado."
-
-db-migrate:
-	$(PYTHON) -m alembic upgrade head
-
-db-revision:
-	@test -n "$(MSG)" || (echo "Use MSG='descricao-da-migracao'"; exit 1)
-	$(PYTHON) -m alembic revision --autogenerate -m "$(MSG)"
+	@echo "→ Compilando backend TypeScript…"
+	cd backend && $(NPM) run build
+	@echo "✓ backend/dist atualizado."
 
 # ── Tauri build helpers ────────────────────────────────
 _tauri-build-prep: bundle-backend
@@ -119,10 +96,23 @@ build-mac: _tauri-build-prep
 
 # ── Clean ─────────────────────────────────────────────
 clean:
-	rm -rf build dist __pycache__ *.spec
+	rm -rf build dist
+	rm -rf backend/dist
 	rm -rf frontend/.next frontend/out
 	rm -rf src-tauri/target
-	rm -f src-tauri/binaries/gatestack-backend
-	rm -f src-tauri/binaries/gatestack-backend-*
-	rm -f src-tauri/binaries/gatestack-backend.exe
 	@echo "✓ Limpeza concluída."
+
+docker-up:
+	docker compose up --build -d
+
+docker-down:
+	docker compose down
+
+docker-logs:
+	docker compose logs -f
+
+db-migrate:
+	npm --prefix backend run prisma:migrate:deploy
+
+db-seed:
+	npm --prefix backend run prisma:seed

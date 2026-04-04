@@ -4,7 +4,7 @@ app = "gatestack"
   dockerfile = "Dockerfile"
 
 [env]
-  FLASK_ENV = "production"
+  NODE_ENV = "production"
   DESKTOP_MODE = "0"
   PORT = "5000"
   GATESTACK_ASYNC_WORKER = "1"

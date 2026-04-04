@@ -11,17 +11,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.x'
+          node-version: '20'
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          npm --prefix backend install
+          npm --prefix frontend ci
       - name: Run Snyk
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          pip install snyk
-          snyk test --all-projects || true
+          npm install -g snyk
+          snyk test --all-projects --severity-threshold=high

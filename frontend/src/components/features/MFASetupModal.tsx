@@ -50,6 +50,9 @@ export function MFASetupModal({ open, onClose, onSuccess }: Props) {
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={onClose}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mfa-setup-title"
         >
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
@@ -60,22 +63,31 @@ export function MFASetupModal({ open, onClose, onSuccess }: Props) {
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
                 <QrCode className="w-5 h-5 text-accent" />
-                <h2 className="text-base font-semibold text-white">Configurar 2FA</h2>
+                <h2 id="mfa-setup-title" className="text-base font-semibold text-white">
+                  Configurar 2FA
+                </h2>
               </div>
-              <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
+              <button
+                onClick={onClose}
+                className="text-gray-500 hover:text-white transition-colors"
+                aria-label="Fechar configuração de 2FA"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 p-3 mb-4 bg-danger/10 border border-danger/20 rounded-xl text-sm text-danger">
+              <div
+                className="flex items-center gap-2 p-3 mb-4 bg-danger/10 border border-danger/20 rounded-xl text-sm text-danger"
+                role="alert"
+              >
                 <AlertCircle className="w-4 h-4 shrink-0" /> {error}
               </div>
             )}
 
             {loading && !qrCode ? (
               <div className="flex flex-col items-center py-10 gap-3">
-                <Loader2 className="w-8 h-8 text-accent animate-spin" />
+                <Loader2 className="w-8 h-8 text-accent animate-spin" aria-hidden="true" />
                 <p className="text-sm text-gray-500">Gerando segredo…</p>
               </div>
             ) : step === 'qr' ? (
@@ -86,13 +98,22 @@ export function MFASetupModal({ open, onClose, onSuccess }: Props) {
                 {qrCode && (
                   <div className="flex justify-center mb-4">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={qrCode} alt="QR Code 2FA" className="w-44 h-44 bg-white p-2 rounded-xl" />
+                    <img
+                      src={qrCode}
+                      alt="QR Code para configuração de 2FA"
+                      className="w-44 h-44 bg-white p-2 rounded-xl"
+                    />
                   </div>
                 )}
                 {secret && (
-                  <div className="mb-4 p-3 bg-dark-850 rounded-xl border border-white/[0.06]">
+                  <div
+                    className="mb-4 p-3 bg-dark-850 rounded-xl border border-white/[0.06]"
+                    aria-label="Código manual para configuração de 2FA"
+                  >
                     <p className="text-[10px] text-gray-500 mb-1">Código manual:</p>
-                    <p className="text-xs font-mono text-white break-all select-all">{secret}</p>
+                    <p className="text-xs font-mono text-white break-all select-all">
+                      {secret}
+                    </p>
                   </div>
                 )}
                 <button
@@ -105,7 +126,7 @@ export function MFASetupModal({ open, onClose, onSuccess }: Props) {
             ) : (
               <>
                 <div className="flex flex-col items-center mb-5">
-                  <ShieldCheck className="w-10 h-10 text-accent mb-2" />
+                  <ShieldCheck className="w-10 h-10 text-accent mb-2" aria-hidden="true" />
                   <p className="text-xs text-gray-400 text-center">
                     Digite o código de 6 dígitos gerado pelo app autenticador:
                   </p>
@@ -120,17 +141,29 @@ export function MFASetupModal({ open, onClose, onSuccess }: Props) {
                   placeholder="000 000"
                   className="w-full bg-dark-850 border border-white/10 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono text-white focus:outline-none focus:border-accent/50 mb-4"
                   autoFocus
+                  aria-label="Digite o código de autenticação de 6 dígitos"
                 />
                 <div className="flex gap-2">
-                  <button onClick={() => { setStep('qr'); setCode('') }} className="flex-1 py-2.5 rounded-xl bg-dark-700 text-sm text-gray-400 hover:text-white transition-all">
+                  <button
+                    onClick={() => {
+                      setStep('qr');
+                      setCode('');
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-dark-700 text-sm text-gray-400 hover:text-white transition-all"
+                  >
                     ← Voltar
                   </button>
                   <button
                     onClick={verify}
                     disabled={loading || code.length < 6}
                     className="flex-1 py-2.5 rounded-xl bg-accent text-dark-900 font-semibold text-sm hover:bg-accent-300 transition-all disabled:opacity-50"
+                    aria-label="Confirmar código de autenticação"
                   >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Confirmar'}
+                    {loading ? (
+                      <Loader2 className="w-4 h-4 animate-spin mx-auto" aria-hidden="true" />
+                    ) : (
+                      'Confirmar'
+                    )}
                   </button>
                 </div>
               </>

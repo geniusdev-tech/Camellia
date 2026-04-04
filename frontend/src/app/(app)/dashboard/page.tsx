@@ -6,64 +6,63 @@ const areas = [
   {
     href: '/repository',
     title: 'Repositório',
-    text: 'Busca, paginação, detalhe, workflow, metadata, grants e downloads assinados.',
+    description: 'Acesso a releases, versionamento e políticas de distribuição.',
     icon: FolderGit2,
   },
   {
     href: '/teams',
     title: 'Times',
-    text: 'Times, convites e grants por equipe sobre os pacotes do repositório.',
+    description: 'Gestão de equipes, permissões e roles de acesso.',
     icon: Users,
   },
   {
     href: '/ops',
     title: 'Operações',
-    text: 'Jobs assíncronos, scans, publish e métricas operacionais do backend.',
+    description: 'Jobs assíncronos, scans de segurança e métricas do sistema.',
     icon: ActivitySquare,
   },
   {
     href: '/catalog',
-    title: 'Catálogo Público',
-    text: 'Consulta de releases públicas, latest, versões e download externo.',
+    title: 'Catálogo',
+    description: 'Discover de releases públicas e downloads.',
     icon: Globe2,
   },
 ]
 
 export default function DashboardPage() {
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-5">
-      <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-primary-900 via-dark-850 to-accent-900/50 p-6 lg:p-8">
-        <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(0,212,170,0.18),transparent_55%)]" />
-        <div className="relative">
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.24em] text-gray-300">
-            GateStack Console
-          </span>
-          <h1 className="mt-4 max-w-3xl text-3xl font-bold leading-tight text-white font-display lg:text-5xl">
-            A plataforma agora está dividida por domínio operacional.
+    <div className="mx-auto max-w-7xl px-6 py-12 space-y-12">
+      {/* Header */}
+      <section className="space-y-4">
+        <div>
+          <p className="text-sm font-mono text-green-400 mb-2">DASHBOARD</p>
+          <h1 className="text-4xl font-bold leading-tight">
+            Bem-vindo ao GateStack.
           </h1>
-          <p className="mt-4 max-w-3xl text-sm leading-6 text-gray-300 lg:text-base">
-            Use o overview para leitura rápida e entre nas áreas dedicadas para trabalhar com repositório, times, operações e catálogo.
+          <p className="mt-2 text-gray-400 max-w-2xl text-lg">
+            Conformidade, segurança e inteligência em tempo real para suas releases.
           </p>
         </div>
       </section>
 
       <StatsBar />
 
-      <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        {areas.map(({ href, title, text, icon: Icon }) => (
+      {/* Areas Grid */}
+      <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {areas.map(({ href, title, description, icon: Icon }) => (
           <Link
             key={href}
             href={href}
-            className="glass group rounded-2xl p-5 transition-transform duration-200 hover:-translate-y-1"
+            className="group bg-dark-900/30 border border-white/5 rounded-lg p-6 hover:border-green-400/50 hover:bg-dark-800/30 transition-all"
           >
-            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/10 text-accent">
-              <Icon className="h-5 w-5" />
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-green-400/10 text-green-400 mb-4">
+              <Icon className="h-6 w-6" />
             </div>
-            <div className="text-lg font-semibold text-white">{title}</div>
-            <p className="mt-2 text-sm leading-6 text-gray-400">{text}</p>
-            <div className="mt-4 inline-flex items-center gap-2 text-sm text-accent">
-              Abrir área
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            <h3 className="text-lg font-semibold text-white">{title}</h3>
+            <p className="mt-2 text-sm text-gray-400 leading-relaxed">{description}</p>
+            <div className="mt-4 inline-flex items-center gap-2 text-sm text-green-400 group-hover:translate-x-1 transition-transform">
+              Acessar
+              <ArrowRight className="h-4 w-4" />
             </div>
           </Link>
         ))}

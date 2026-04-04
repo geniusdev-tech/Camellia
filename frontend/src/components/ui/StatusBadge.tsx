@@ -24,7 +24,10 @@ export function statusBadgeClass(status: string) {
 
 export function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={`rounded-full border px-2 py-1 text-[10px] font-medium ${statusBadgeClass(status)}`}>
+    <span
+      role="status"
+      aria-label={`Status: ${status}`}
+      className={`rounded-full border px-2 py-1 text-[10px] font-medium ${statusBadgeClass(status)}`}>
       {status}
     </span>
   )

@@ -2,73 +2,89 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
 
 jobs:
-  test-and-scan:
+  backend:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gatestack
+          POSTGRES_USER: gatestack
+          POSTGRES_PASSWORD: gatestack
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gatestack -d gatestack"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql://gatestack:gatestack@127.0.0.1:5432/gatestack
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: 5000
+      ALLOWED_ORIGIN: http://127.0.0.1:3000
+      JWT_SECRET: ci_jwt_secret_with_minimum_length_32_chars
+      JWT_EXPIRES_IN: 1h
+      ADMIN_EMAIL: admin@gatestack.local
+      ADMIN_PASSWORD: ChangeMeNow_12345
+      METRICS_TOKEN: ci_metrics_token_1234567890
+      THROTTLE_TTL: 60
+      THROTTLE_LIMIT: 120
+      PUBLISH_MAX_CVSS: 7
+
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install backend dependencies
+        run: npm --prefix backend install
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements-pinned.txt ]; then
-            pip install -r requirements-pinned.txt
-          else
-            pip install -r requirements.txt
-          fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || true; fi
-          pip install pyinstaller
-          cd frontend && npm ci
+      - name: Generate Prisma client
+        run: npm --prefix backend run prisma:generate
 
-      - name: Lint (flake8)
-        run: |
-          flake8 || true
+      - name: Apply Prisma migrations
+        run: npm --prefix backend run prisma:migrate:deploy
+
+      - name: Lint backend
+        run: npm --prefix backend run lint
+
+      - name: Type-check backend
+        run: npm --prefix backend run type-check
+
+      - name: Test backend
+        run: npm --prefix backend run test
+
+      - name: Build backend
+        run: npm --prefix backend run build
+
+      - name: Run backend e2e
+        run: npm --prefix backend run test:e2e
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
 
       - name: Type-check frontend
-        run: |
-          cd frontend && npm run type-check
-
-      - name: Check Python modules compile
-        run: |
-          python -m compileall app.py api core utils
-
-      - name: Check Tauri Rust crate
-        run: |
-          make bundle-backend
-          cargo check --manifest-path src-tauri/Cargo.toml
-
-      - name: Security scan (Bandit)
-        run: |
-          bandit -r . -ll || true
-
-      - name: Security scan (safety)
-        run: |
-          python -m pip install safety || true
-          if [ -f requirements-pinned.txt ]; then
-            safety check --file=requirements-pinned.txt || true
-          else
-            echo "requirements-pinned.txt not found; safety scan skipped. Use scripts/pin_requirements.sh to generate it." 
-          fi
-
-      - name: Run tests (pytest)
-        run: |
-          pytest -q
+        run: npm --prefix frontend run type-check

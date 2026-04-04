@@ -1,24 +1,102 @@
-version: "3.9"
+version: '3.9'
 
 services:
-  gatestack:
-    build: .
-    container_name: gatestack
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gatestack-backend
     restart: unless-stopped
-    ports:
-      - "5000:5000"
     environment:
-      - FLASK_ENV=production
-      - SECRET_KEY=${SECRET_KEY}
-      - AUDIT_LOG_PATH=/data/audit.log
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 5000
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-gatestack}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-gatestack}}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change_me}
+      LOG_LEVEL: info
+      JWT_SECRET: ${JWT_SECRET:-change_me_jwt_secret_with_32_chars_min}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@gatestack.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMeNow_12345}
+      METRICS_TOKEN: ${METRICS_TOKEN:-change_me_metrics_token}
+      THROTTLE_TTL: ${THROTTLE_TTL:-60}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-120}
+      PUBLISH_MAX_CVSS: ${PUBLISH_MAX_CVSS:-7}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - '127.0.0.1:5000:5000'
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: gatestack-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gatestack}
+      POSTGRES_USER: ${POSTGRES_USER:-gatestack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
     volumes:
-      - gatestack-data:/data
-      - ${HOME}/.gatestack:/home/gatestack/.gatestack
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-gatestack} -d ${POSTGRES_DB:-gatestack}']
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
+    ports:
+      - '127.0.0.1:5432:5432'
+
+  redis:
+    image: redis:7-alpine
+    container_name: gatestack-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-change_me}"]
+    ports:
+      - '127.0.0.1:6379:6379'
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: gatestack-nginx
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '127.0.0.1:80:80'
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: gatestack-prometheus
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '127.0.0.1:9090:9090'
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: gatestack-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    ports:
+      - '127.0.0.1:3001:3000'
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-change_me}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards-json:ro
 
 volumes:
-  gatestack-data:
+  postgres-data:
+  grafana-data:

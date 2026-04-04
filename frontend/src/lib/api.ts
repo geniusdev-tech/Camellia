@@ -2,6 +2,8 @@ import type {
   ApiResponse,
   AsyncJobListResponse,
   AsyncJobResponse,
+  CreateReleaseRequest,
+  CreateReleaseResponse,
   DownloadResponse,
   LoginMFARequest,
   LoginRequest,
@@ -16,6 +18,7 @@ import type {
   PublicPackageDetailResponse,
   PublicPackageListResponse,
   PublicVersionResponse,
+  ReleasesListResponse,
   RegisterRequest,
   Setup2FAResponse,
   TeamCreateResponse,
@@ -126,12 +129,13 @@ async function performRefresh(base: string): Promise<boolean> {
     }, REQUEST_TIMEOUT_MS)
 
     const body = await parseResponseBody(response) as LoginResponse | null
-    if (!response.ok || !body?.access_token) {
+    const refreshedToken = body?.accessToken || body?.access_token
+    if (!response.ok || !refreshedToken) {
       store.logout()
       return false
     }
 
-    store.updateAccessToken(body.access_token, body.refresh_token ?? null)
+    store.updateAccessToken(refreshedToken, body.refresh_token ?? null)
     return true
   } catch {
     store.logout()
@@ -309,6 +313,29 @@ export const authAPI = {
 
   disable2FA: () =>
     fetchAPI<ApiResponse>('/api/auth/mfa/disable', { method: 'POST' }),
+}
+
+export const releasesAPI = {
+  list: () =>
+    fetchAPI<ReleasesListResponse>('/api/releases'),
+
+  create: (payload: CreateReleaseRequest) =>
+    fetchAPI<CreateReleaseResponse>('/api/releases', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  publish: (releaseId: string) =>
+    fetchAPI<ApiResponse & { releaseId: string; enqueued: boolean; job: string }>(
+      `/api/releases/${encodeURIComponent(releaseId)}/publish`,
+      { method: 'POST' },
+    ),
+
+  rollback: (releaseId: string, targetReleaseId: string) =>
+    fetchAPI<ApiResponse & { releaseId: string; targetReleaseId: string; enqueued: boolean; job: string }>(
+      `/api/releases/${encodeURIComponent(releaseId)}/rollback`,
+      { method: 'POST', body: JSON.stringify({ targetReleaseId }) },
+    ),
 }
 
 export const projectsAPI = {

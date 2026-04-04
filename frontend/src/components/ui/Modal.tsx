@@ -47,26 +47,27 @@ export function Modal({ open, title, children, onClose, footer }: ModalProps) {
             className="glass w-full max-w-2xl rounded-2xl shadow-panel"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
+            <header className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
               <h3 className="text-base font-semibold text-white">{title}</h3>
               <button
                 ref={closeButtonRef}
                 onClick={onClose}
                 className="rounded-lg p-1 text-gray-500 transition-colors hover:bg-white/5 hover:text-white"
+                aria-label="Fechar modal"
               >
                 <X className="h-4 w-4" />
               </button>
-            </div>
+            </header>
 
-            <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
+            <main className="max-h-[70vh] overflow-y-auto px-5 py-4">
               {children}
-            </div>
+            </main>
 
-            {footer ? (
-              <div className="flex items-center justify-end gap-2 border-t border-white/[0.06] px-5 py-4">
+            {footer && (
+              <footer className="flex items-center justify-end gap-2 border-t border-white/[0.06] px-5 py-4">
                 {footer}
-              </div>
-            ) : null}
+              </footer>
+            )}
           </motion.div>
         </motion.div>
       ) : null}

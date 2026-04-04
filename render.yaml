@@ -9,10 +9,8 @@ services:
     envVars:
       - key: SECRET_KEY
         generateValue: true
-      - key: FLASK_ENV
+      - key: NODE_ENV
         value: production
-      - key: FLASK_DEBUG
-        value: "0"
       - key: PORT
         value: "5000"
       - key: HOST

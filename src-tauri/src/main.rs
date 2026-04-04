@@ -47,7 +47,7 @@ fn main() {
                         Ok(port_command) => {
                             let command = port_command
                                 .env("PORT", port.to_string())
-                                .env("FLASK_ENV", "production")
+                                .env("NODE_ENV", "production")
                                 .env("DESKTOP_MODE", "1");
                             match command.spawn() {
                                 Ok((mut rx, _child)) => {

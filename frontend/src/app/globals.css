@@ -1,15 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ── Custom properties ─────────────────────────────── */
+/* ── Custom colors ─────────────────────────────── */
 :root {
-  --font-geist-sans: 'DM Sans', system-ui, sans-serif;
-  --font-geist-mono: 'JetBrains Mono', 'Fira Code', monospace;
-  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --color-dark-950: #0a0a0a;
+  --color-dark-900: #1a1a1a;
+  --color-dark-800: #2a2a2a;
+  --color-green-400: #4ade80;
+  --color-green-500: #22c55e;
+  --color-cyan-400: #06b6d4;
+  --color-cyan-500: #0891b2;
 }
 
-/* ── Base ──────────────────────────────────────────── */
+/* ── Neural Network Background ──────────────── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes cyber-flicker {
+  0% { opacity: 1; }
+  3% { opacity: 0.8; }
+  6% { opacity: 1; }
+  8% { opacity: 0.6; }
+  10% { opacity: 1; }
+}
+
+/* ── Base ──────────────────────────────────────── */
 @layer base {
   html {
     @apply scroll-smooth;
@@ -18,43 +43,157 @@
   }
 
   body {
-    @apply bg-dark-900 text-gray-100 font-sans;
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(255 255 255 / 0.03)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e");
+    @apply antialiased font-sans text-gray-100;
+    background: #0a0a0a;
+    background-image: 
+      /* Neural network grid */
+      linear-gradient(0deg, rgba(74, 222, 128, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(74, 222, 128, 0.03) 1px, transparent 1px),
+      /* Gradient overlays */
+      radial-gradient(ellipse at 20% 30%, rgba(6, 182, 212, 0.1), transparent 50%),
+      radial-gradient(ellipse at 80% 70%, rgba(74, 222, 128, 0.08), transparent 50%),
+      linear-gradient(180deg, #0a0a0a 0%, #0f0f0f 100%);
+    background-size: 
+      80px 80px,
+      80px 80px,
+      100% 100%,
+      100% 100%,
+      100% 100%;
+    position: relative;
   }
 
-  /* Prevent double scrollbar from Next.js */
-  #__next { @apply min-h-screen; }
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: 
+      radial-gradient(circle at 25% 25%, rgba(6, 182, 212, 0.15), transparent 40%),
+      radial-gradient(circle at 75% 75%, rgba(74, 222, 128, 0.1), transparent 40%),
+      radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.05), transparent 60%);
+    pointer-events: none;
+    z-index: -1;
+    animation: glow-pulse 8s ease-in-out infinite;
+  }
 
-  /* Selection */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+      /* Vertical neural lines */
+      repeating-linear-gradient(
+        90deg,
+        rgba(74, 222, 128, 0),
+        rgba(74, 222, 128, 0) 2px,
+        rgba(74, 222, 128, 0.02) 2px,
+        rgba(74, 222, 128, 0.02) 4px
+      ),
+      /* Horizontal neural lines */
+      repeating-linear-gradient(
+        0deg,
+        rgba(6, 182, 212, 0),
+        rgba(6, 182, 212, 0) 2px,
+        rgba(6, 182, 212, 0.02) 2px,
+        rgba(6, 182, 212, 0.02) 4px
+      );
+    background-size: 200px 200px;
+    background-position: 0 0, 100px 100px;
+    pointer-events: none;
+    z-index: -2;
+  }
+
+  #__next { 
+    @apply min-h-screen; 
+  }
+
   ::selection {
-    @apply bg-accent/30 text-white;
+    @apply bg-cyan-400/30 text-white;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-sans font-bold text-white;
+    text-shadow: 0 0 20px rgba(6, 182, 212, 0.1);
+  }
+
+  p {
+    @apply text-gray-300 leading-relaxed;
+  }
+
+  a {
+    @apply text-green-400 hover:text-cyan-400 transition-colors duration-200;
   }
 }
 
-/* ── Scrollbar ─────────────────────────────────────── */
-::-webkit-scrollbar        { width: 6px; height: 6px; }
-::-webkit-scrollbar-track  { @apply bg-dark-850; }
-::-webkit-scrollbar-thumb  { @apply bg-dark-600 rounded-full; }
-::-webkit-scrollbar-thumb:hover { @apply bg-dark-500; }
+/* ── Typography ────────────────────────────────– */
+@layer base {
+  h1 { @apply text-6xl font-black tracking-tight; }
+  h2 { @apply text-4xl font-bold tracking-tight; }
+  h3 { @apply text-2xl font-bold; }
+  h4 { @apply text-xl font-semibold; }
+  .text-mono { @apply font-mono text-sm tracking-wide; }
+}
 
-/* ── Utilities ─────────────────────────────────────── */
+/* ── Scrollbar ─────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { @apply bg-dark-900; }
+::-webkit-scrollbar-thumb { @apply bg-green-400/40 rounded-full hover:bg-green-400/60; }
+::-webkit-scrollbar-thumb:hover { @apply bg-cyan-400/50; }
+
+/* ── Theme colors ──────────────────────────────– */
 @layer utilities {
-  .glass {
-    @apply bg-dark-800/60 backdrop-blur-xl border border-white/[0.06];
+  .bg-dark-950 { @apply bg-[#0a0a0a]; }
+  .bg-dark-900 { @apply bg-[#1a1a1a]; }
+  .bg-dark-800 { @apply bg-[#2a2a2a]; }
+  .border-dark-700 { @apply border-[#3a3a3a]; }
+  
+  .text-green-400 { @apply text-[#4ade80]; }
+  .text-cyan-400 { @apply text-[#06b6d4]; }
+  .hover\:text-cyan-400:hover { @apply text-[#06b6d4]; }
+  
+  /* Hacker terminal effect */
+  .terminal-border {
+    @apply border border-green-400/30 rounded;
+    box-shadow: 
+      0 0 10px rgba(74, 222, 128, 0.1),
+      inset 0 0 10px rgba(74, 222, 128, 0.05);
   }
-  .glass-hover {
-    @apply hover:bg-dark-700/70 transition-colors duration-150;
-  }
-  .text-gradient {
-    @apply bg-gradient-to-r from-accent-400 to-primary-300 bg-clip-text text-transparent;
-  }
-  .ring-accent {
-    @apply ring-2 ring-accent/50 ring-offset-2 ring-offset-dark-900;
-  }
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-}
 
-/* ── Fonts (loaded from Google Fonts via _document or next/font) ── */
-/* Fallback: import here if needed */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+  .terminal-border-cyan {
+    @apply border border-cyan-400/30 rounded;
+    box-shadow: 
+      0 0 15px rgba(6, 182, 212, 0.15),
+      inset 0 0 15px rgba(6, 182, 212, 0.05);
+  }
+
+  /* Cyber glow */
+  .cyber-glow {
+    box-shadow: 
+      0 0 20px rgba(74, 222, 128, 0.2),
+      0 0 40px rgba(74, 222, 128, 0.1),
+      inset 0 0 20px rgba(74, 222, 128, 0.05);
+  }
+
+  .cyber-glow-cyan {
+    box-shadow: 
+      0 0 20px rgba(6, 182, 212, 0.2),
+      0 0 40px rgba(6, 182, 212, 0.1),
+      inset 0 0 20px rgba(6, 182, 212, 0.05);
+  }
+
+  /* Glass effect */
+  .glass {
+    @apply bg-white/5 backdrop-blur-md border border-white/10;
+  }
+  
+  /* Section spacing */
+  .section { @apply py-24 px-6; }
+  
+  /* Grid layout */
+  .container { @apply mx-auto max-w-7xl; }
+}

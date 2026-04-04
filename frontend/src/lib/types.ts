@@ -34,6 +34,7 @@ export interface AuthUser {
 
 export interface LoginResponse extends ApiResponse {
   access_token?: string
+  accessToken?: string
   refresh_token?: string
   email?: string
   has_2fa?: boolean
@@ -242,4 +243,44 @@ export interface DownloadResponse extends ApiResponse {
   expires_in: number
   project?: RepositoryProject
   release?: RepositoryProject
+}
+
+export type ReleaseChannel = 'alpha' | 'beta' | 'stable'
+export type DeploymentEnv = 'dev' | 'staging' | 'prod'
+export type ReleaseStatus = 'draft' | 'scan_pending' | 'scan_failed' | 'approved' | 'published' | 'rollbacked'
+
+export interface GateRelease {
+  id: string
+  packageName: string
+  packageVersion: string
+  releaseChannel: ReleaseChannel
+  deploymentEnv: DeploymentEnv
+  status: ReleaseStatus
+  maxCvss: number
+  complianceScore: number
+  riskScore: number
+  policyApproved: boolean
+  rollbackOfId?: string | null
+  metadataJson?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ReleasesListResponse extends ApiResponse {
+  releases: GateRelease[]
+}
+
+export interface CreateReleaseRequest {
+  packageName: string
+  packageVersion: string
+  releaseChannel: ReleaseChannel
+  deploymentEnv: DeploymentEnv
+  maxCvss: number
+  complianceScore: number
+  riskScore: number
+  metadata?: Record<string, unknown>
+}
+
+export interface CreateReleaseResponse extends ApiResponse {
+  release: GateRelease
 }

@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ReleaseChannel {
+  alpha
+  beta
+  stable
+}
+
+enum DeploymentEnv {
+  dev
+  staging
+  prod
+}
+
+enum ReleaseStatus {
+  draft
+  approved
+  published
+  archived
+}
+
+enum UserRole {
+  admin
+  writer
+  reader
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole @default(reader)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Release {
+  id              String         @id @default(uuid())
+  packageName     String         @map("package_name")
+  packageVersion  String         @map("package_version")
+  releaseChannel  ReleaseChannel @default(stable) @map("release_channel")
+  deploymentEnv   DeploymentEnv  @default(dev) @map("deployment_env")
+  status          ReleaseStatus  @default(draft)
+  maxCvss         Float          @default(0) @map("max_cvss")
+  complianceScore Float          @default(0) @map("compliance_score")
+  riskScore       Float          @default(100) @map("risk_score")
+  policyApproved  Boolean        @default(false) @map("policy_approved")
+  rollbackOfId    String?        @map("rollback_of_id")
+  metadataJson    String?        @map("metadata_json")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  @@index([packageName, packageVersion])
+  @@index([packageName, releaseChannel, status])
+  @@unique([packageName, packageVersion])
+  @@map("releases")
+}

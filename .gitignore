@@ -13,7 +13,14 @@ dist/
 # Secrets & keys
 .env
 .env.local
+.env.production
+.env.staging
+.env.development.local
+.env.test.local
 .env.*.local
+.npmrc
+.firebase.json
+firebase.json
 kms.key
 *.key
 *.pem
@@ -21,9 +28,14 @@ kms.key
 *.p12
 .audit_signing_key
 .manifest_signing_key*
+.ssl/
+*.keystore
+*.pfx
 
 # Logs / databases
 audit.log
+*.log
+logs/
 history.json
 users.db
 *.db
@@ -32,18 +44,29 @@ storage/
 keys/
 *.enc
 *.tmp
+*.bak
+*.backup
+dump.rdb
 
 # Node / Next.js
 frontend/node_modules/
+backend/node_modules/
 frontend/.next/
 frontend/out/
 frontend/tsconfig.tsbuildinfo
 node_modules/
+dist/
+build/
+.next/
+out/
 
 # Rust / Tauri
 src-tauri/target/
 src-tauri/Cargo.lock
 src-tauri/binaries/gatestack-backend*
+src-tauri/binaries/*.exe
+src-tauri/binaries/*.so
+src-tauri/binaries/*.dylib
 
 # OS
 .DS_Store
@@ -63,3 +86,14 @@ Thumbs.db
 .codex
 .vercel
 infra/vault/data/
+
+# macOS / IDE specific
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.sublime-project
+.sublime-workspace

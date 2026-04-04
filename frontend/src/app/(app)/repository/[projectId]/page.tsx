@@ -15,3 +15,10 @@ export default async function RepositoryDetailPage({
     </div>
   )
 }
+
+export async function generateStaticParams() {
+  // Substitua esta lógica com os IDs reais dos projetos
+  const projectIds = ['project1', 'project2', 'project3']
+
+  return projectIds.map((projectId) => ({ projectId }))
+}

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FolderKanban, LayoutDashboard, Settings, LogOut,
-  Menu, X, ChevronRight, Bell, HelpCircle,
+  Menu, ChevronRight, Bell, HelpCircle,
   FolderGit2, Users, ActivitySquare, Globe2,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
@@ -25,42 +25,12 @@ const NAV = [
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router    = useRouter()
   const pathname  = usePathname()
-  const { user, accessToken, refreshToken, isAuthenticated, logout, setSession } = useAuthStore()
+  const { user, isAuthenticated, logout } = useAuthStore()
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated) router.replace('/login')
   }, [isAuthenticated, router])
-
-  useEffect(() => {
-    if (!isAuthenticated) return
-    let cancelled = false
-
-    authAPI.status()
-      .then((res) => {
-        if (cancelled) return
-        if (!res.success) {
-          logout()
-          router.replace('/login')
-          return
-        }
-        if (res.email && accessToken) {
-          setSession({
-            user_id: Number(res.user_id || 0) || user?.user_id,
-            email: res.email,
-            has_2fa: !!res.has_2fa,
-            role: res.role || null,
-          }, accessToken, refreshToken)
-        }
-      })
-      .catch(() => {
-        if (cancelled) return
-        logout()
-        router.replace('/login')
-      })
-
-    return () => { cancelled = true }
-  }, [accessToken, refreshToken, isAuthenticated, logout, router, setSession, user?.user_id])
 
   const handleLogout = async () => {
     try { await authAPI.logout() } catch {}

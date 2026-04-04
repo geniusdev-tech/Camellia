@@ -11,7 +11,7 @@ const nextConfig = {
   },
   // Trailing slash ensures each route has its own index.html
   trailingSlash: true,
-  // In dev, proxy API requests to Flask
+  // In dev, proxy API requests to local backend
   ...((isProd || explicitApiBase)
     ? {}
     : {

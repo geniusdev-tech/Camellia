@@ -45,8 +45,8 @@ describe('LoginPage', () => {
 
     render(React.createElement(LoginPage))
 
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'owner@example.com' } })
-    fireEvent.change(screen.getByLabelText(/senha/i), { target: { value: 'Owner-pass-123!' } })
+    fireEvent.change(screen.getAllByTestId('login-email')[0], { target: { value: 'owner@example.com' } })
+    fireEvent.change(screen.getAllByTestId('login-password')[0], { target: { value: 'Owner-pass-123!' } })
     fireEvent.click(document.querySelector('button[type="submit"]') as HTMLButtonElement)
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'))
@@ -72,8 +72,8 @@ describe('LoginPage', () => {
 
     render(React.createElement(LoginPage))
 
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'user@example.com' } })
-    fireEvent.change(screen.getByLabelText(/senha/i), { target: { value: 'User-pass-123!' } })
+    fireEvent.change(screen.getAllByTestId('login-email')[0], { target: { value: 'user@example.com' } })
+    fireEvent.change(screen.getAllByTestId('login-password')[0], { target: { value: 'User-pass-123!' } })
     fireEvent.click(document.querySelector('button[type="submit"]') as HTMLButtonElement)
 
     await screen.findByPlaceholderText('000 000')

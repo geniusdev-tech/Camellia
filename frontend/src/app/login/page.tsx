@@ -1,211 +1,176 @@
 'use client'
-import { useState, useCallback } from 'react'
+
+import { useCallback, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
-import { FolderGit2, Eye, EyeOff, Loader2, AlertCircle, Sparkles, ArrowRight } from 'lucide-react'
+import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react'
 import { authAPI } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 
 type Mode = 'login' | 'register' | 'mfa'
 
 export default function LoginPage() {
-  const router  = useRouter()
-  const setSession = useAuthStore((s) => s.setSession)
+  const router = useRouter()
+  const setSession = useAuthStore((state) => state.setSession)
 
-  const [mode, setMode]         = useState<Mode>('login')
-  const [email, setEmail]       = useState('')
+  const [mode, setMode] = useState<Mode>('login')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [mfaCode, setMfaCode]   = useState('')
-  const [userId, setUserId]     = useState<number | string | null>(null)
-  const [showPwd, setShowPwd]   = useState(false)
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
+  const [mfaCode, setMfaCode] = useState('')
+  const [userId, setUserId] = useState<number | string | null>(null)
+  const [showPwd, setShowPwd] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+  const ctaText = useMemo(() => {
+    if (mode === 'register') return 'Criar Conta'
+    if (mode === 'mfa') return 'Confirmar'
+    return 'Entrar'
+  }, [mode])
 
-    try {
-      if (mode === 'register') {
-        const res = await authAPI.register({ email, password })
-        if (res.success) {
-          setMode('login')
-          setPassword('')
-          setError('')
-        } else {
-          setError(res.msg || 'Erro no registro')
+  const handleSubmit = useCallback(
+    async (event: React.FormEvent) => {
+      event.preventDefault()
+      setError('')
+      setLoading(true)
+
+      try {
+        if (mode === 'register') {
+          const response = await authAPI.register({ email, password })
+          if (response.success) {
+            setMode('login')
+            setPassword('')
+            setError('')
+          } else {
+            setError(response.msg || response.message || 'Erro no registro')
+          }
+          return
         }
-        return
-      }
 
-      if (mode === 'mfa') {
-        if (!userId) { setError('Sessão inválida'); return }
-        const res = await authAPI.loginMFA({ code: mfaCode, user_id: userId })
-        if (res.success && res.access_token) {
-          setSession({
-            user_id: Number(res.user_id || userId),
-            email: res.email || email,
-            has_2fa: true,
-            role: res.role || null,
-          }, res.access_token, res.refresh_token)
-          router.replace('/dashboard')
-        } else {
-          setError(res.msg || 'Código inválido')
+        if (mode === 'mfa') {
+          if (!userId) {
+            setError('Sessão inválida')
+            return
+          }
+          const response = await authAPI.loginMFA({ code: mfaCode, user_id: userId })
+          const token = response.accessToken || response.access_token
+          if (response.success && token) {
+            setSession(
+              {
+                user_id: Number(response.user_id || userId),
+                email: response.email || email,
+                has_2fa: true,
+                role: response.role || null,
+              },
+              token,
+              response.refresh_token,
+            )
+            router.replace('/dashboard')
+          } else {
+            setError(response.msg || response.message || 'Código inválido')
+          }
+          return
         }
-        return
-      }
 
-      // Normal login
-      const res = await authAPI.login({ email, password })
-      if (res.requires_mfa || res.requires_2fa) {
-        setUserId(res.user_id ?? null)
-        setMode('mfa')
-      } else if (res.success && res.access_token) {
-        setSession({
-          user_id: Number(res.user_id || 0) || undefined,
-          email: res.email || email,
-          has_2fa: res.has_2fa || false,
-          role: res.role || null,
-        }, res.access_token, res.refresh_token)
-        router.replace('/dashboard')
-      } else {
-        setError(res.msg || 'Credenciais inválidas')
+        const loginResponse = await authAPI.login({ email, password })
+        if (loginResponse.requires_mfa || loginResponse.requires_2fa) {
+          setUserId(loginResponse.user_id ?? null)
+          setMode('mfa')
+        } else {
+          const token = loginResponse.accessToken || loginResponse.access_token
+          if (loginResponse.success && token) {
+            setSession(
+              {
+                user_id: Number(loginResponse.user_id || 0) || undefined,
+                email: loginResponse.email || email,
+                has_2fa: loginResponse.has_2fa || false,
+                role: loginResponse.role || null,
+              },
+              token,
+              loginResponse.refresh_token,
+            )
+            router.replace('/dashboard')
+          } else {
+            setError(loginResponse.msg || loginResponse.message || 'Credenciais inválidas')
+          }
+        }
+      } catch (err: unknown) {
+        setError((err as Error).message || 'Erro de conexão')
+      } finally {
+        setLoading(false)
       }
-    } catch (err: unknown) {
-      setError((err as Error).message || 'Erro de conexão')
-    } finally {
-      setLoading(false)
-    }
-  }, [mode, email, password, mfaCode, userId, setSession, router])
+    },
+    [email, mfaCode, mode, password, router, setSession, userId],
+  )
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-dark-900 bg-grid-dark p-4">
-      {/* Background glow */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <div className="w-[600px] h-[600px] rounded-full bg-primary/10 blur-[120px] opacity-60" />
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="relative w-full max-w-sm"
-      >
-        {/* Card */}
-        <div className="glass rounded-2xl p-8 shadow-panel">
-          {/* Logo */}
-          <div className="flex flex-col items-center mb-8">
-            <div className="relative mb-4">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center shadow-glow-accent">
-                <FolderGit2 className="w-8 h-8 text-white" />
-              </div>
-              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-accent rounded-full border-2 border-dark-900 flex items-center justify-center">
-                <Sparkles className="w-2.5 h-2.5 text-dark-900" />
-              </div>
-            </div>
-            <h1 className="text-xl font-bold tracking-tight font-display">GateStack</h1>
-            <p className="text-xs text-gray-500 mt-0.5">The access control stack</p>
+    <main className="min-h-screen bg-dark-950 flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        <div className="space-y-8">
+          {/* Header */}
+          <div className="text-center space-y-2">
+            <p className="text-sm font-mono text-green-400">AUTENTICAÇÃO</p>
+            <h1 className="text-3xl font-bold">Bem-vindo ao GateStack</h1>
+            <p className="text-gray-400 text-sm">
+              {mode === 'register' && 'Crie sua conta para começar'}
+              {mode === 'login' && 'Entre para acessar o dashboard'}
+              {mode === 'mfa' && 'Confirme seu código de autenticação'}
+            </p>
           </div>
-
-          {/* Tab switcher (login / register) */}
-          <AnimatePresence mode="wait">
-            {mode !== 'mfa' && (
-              <div className="flex mb-6 p-1 bg-dark-850 rounded-xl">
-                {(['login', 'register'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => { setMode(m); setError('') }}
-                    className={`flex-1 py-1.5 text-sm font-medium rounded-lg transition-all ${
-                      mode === m
-                        ? 'bg-dark-700 text-white shadow-md'
-                        : 'text-gray-500 hover:text-gray-300'
-                    }`}
-                  >
-                    {m === 'login' ? 'Entrar' : 'Registrar'}
-                  </button>
-                ))}
-              </div>
-            )}
-          </AnimatePresence>
-
-          {/* Error */}
-          <AnimatePresence>
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, height: 0, marginBottom: 0 }}
-                animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
-                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                className="flex items-center gap-2 p-3 bg-danger/10 border border-danger/20 rounded-xl text-sm text-danger"
-              >
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                {error}
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="flex items-center gap-2 p-4 rounded-lg bg-red-400/10 border border-red-400/30 text-red-300 text-sm">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+
             {mode === 'mfa' ? (
               <>
-                <div className="text-center mb-2">
-                  <p className="text-sm text-gray-400">
-                    Digite o código de 6 dígitos do seu autenticador:
-                  </p>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-300">Código de Autenticação</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="w-full px-4 py-3 rounded-lg bg-dark-900 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-green-400"
+                  />
+                  <p className="text-xs text-gray-400">Digite o código do seu autenticador</p>
                 </div>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="000 000"
-                  className="w-full bg-dark-850 border border-white/10 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono text-white focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-all"
-                  autoFocus
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => { setMode('login'); setMfaCode(''); setError('') }}
-                  className="w-full text-xs text-gray-500 hover:text-gray-400 transition-colors"
-                >
-                  ← Voltar ao login
-                </button>
               </>
             ) : (
               <>
-                <div>
-                  <label htmlFor="email" className="block text-xs font-medium text-gray-400 mb-1.5">Email</label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-300">Email</label>
                   <input
-                    id="email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="seu@email.com"
-                    className="w-full bg-dark-850 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-all"
-                    required
+                    className="w-full px-4 py-3 rounded-lg bg-dark-900 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-green-400"
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="password" className="block text-xs font-medium text-gray-400 mb-1.5">Senha</label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-300">Senha</label>
                   <div className="relative">
                     <input
-                      id="password"
                       type={showPwd ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full bg-dark-850 border border-white/10 rounded-xl px-4 py-2.5 pr-10 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-all"
-                      required
+                      className="w-full px-4 py-3 rounded-lg bg-dark-900 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-green-400"
                     />
                     <button
                       type="button"
-                      onClick={() => setShowPwd((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                      onClick={() => setShowPwd(!showPwd)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300"
                     >
-                      {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </div>
@@ -215,24 +180,48 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-primary-600 to-accent-600 hover:from-primary-500 hover:to-accent-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-xl transition-all shadow-glow-primary text-sm"
+              className="w-full py-3 px-4 rounded-lg bg-green-400 text-dark-950 font-semibold hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  {mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar conta' : 'Verificar'}
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {ctaText}
             </button>
           </form>
-        </div>
 
-        <p className="text-center text-xs text-gray-600 mt-4">
-          Coleção centralizada · uploads versionados · curadoria visual
-        </p>
-      </motion.div>
+          {/* Toggle Mode */}
+          {mode !== 'mfa' && (
+            <div className="text-center text-sm">
+              <span className="text-gray-400">
+                {mode === 'register' ? 'Já tem conta? ' : 'Não tem conta? '}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode(mode === 'register' ? 'login' : 'register')
+                  setError('')
+                  setPassword('')
+                }}
+                className="text-green-400 hover:text-green-300 font-medium"
+              >
+                {mode === 'register' ? 'Entrar' : 'Criar conta'}
+              </button>
+            </div>
+          )}
+
+          {mode === 'mfa' && (
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login')
+                setMfaCode('')
+                setError('')
+              }}
+              className="w-full py-2 text-sm text-gray-400 hover:text-gray-300"
+            >
+              Voltar ao login
+            </button>
+          )}
+        </div>
+      </div>
     </main>
   )
 }

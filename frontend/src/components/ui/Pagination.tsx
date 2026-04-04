@@ -1,25 +1,29 @@
-'use client'
+'use client';
 
 interface PaginationProps {
-  page: number
-  pages: number
-  onPageChange: (page: number) => void
+  page: number;
+  pages: number;
+  onPageChange: (page: number) => void;
 }
 
 export function Pagination({ page, pages, onPageChange }: PaginationProps) {
-  if (pages <= 1) return null
+  if (pages <= 1) return null;
 
   const items = Array.from({ length: pages }, (_, index) => index + 1).slice(
     Math.max(0, page - 3),
-    Math.max(5, Math.min(pages, page + 2)),
-  )
+    Math.max(5, Math.min(pages, page + 2))
+  );
 
   return (
-    <div className="flex items-center justify-between gap-3 pt-4">
+    <nav
+      aria-label="Paginação"
+      className="flex items-center justify-between gap-3 pt-4"
+    >
       <button
         onClick={() => onPageChange(page - 1)}
         disabled={page <= 1}
         className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white disabled:opacity-40"
+        aria-label="Página anterior"
       >
         Anterior
       </button>
@@ -33,6 +37,8 @@ export function Pagination({ page, pages, onPageChange }: PaginationProps) {
                 ? 'bg-accent text-dark-950'
                 : 'border border-white/10 bg-white/5 text-white'
             }`}
+            aria-current={item === page ? 'page' : undefined}
+            aria-label={`Ir para a página ${item}`}
           >
             {item}
           </button>
@@ -42,9 +48,10 @@ export function Pagination({ page, pages, onPageChange }: PaginationProps) {
         onClick={() => onPageChange(page + 1)}
         disabled={page >= pages}
         className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white disabled:opacity-40"
+        aria-label="Próxima página"
       >
         Próxima
       </button>
-    </div>
-  )
+    </nav>
+  );
 }

@@ -19,8 +19,12 @@ const IconMap = {
 export function FeedbackBanner({ tone, message }: { tone: Tone; message: string }) {
   const Icon = IconMap[tone]
   return (
-    <div className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-sm ${toneClasses[tone]}`}>
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+    <div
+      role="status"
+      aria-live="polite"
+      className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-sm ${toneClasses[tone]}`}
+    >
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <span>{message}</span>
     </div>
   )

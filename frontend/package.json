@@ -7,7 +7,7 @@
     "dev:vercel-backend": "NEXT_PUBLIC_API_BASE_URL=https://gatestack.vercel.app next dev -p 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "npm run type-check",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test"
