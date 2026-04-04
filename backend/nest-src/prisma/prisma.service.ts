@@ -1,23 +1,33 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(PrismaService.name);
+
   async onModuleInit(): Promise<void> {
+    // Connect in background so we don't block NestJS startup.
+    // The health endpoint responds immediately; the DB retries happen behind the scenes.
+    this.connectWithRetry().catch((err) => {
+      this.logger.error('[PrismaService] Background DB connection failed permanently', err);
+    });
+  }
+
+  private async connectWithRetry(): Promise<void> {
     const maxRetries = 30;
-    const retryDelayMs = 1000;
+    const retryDelayMs = 2000;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         await this.$connect();
-        console.log('[PrismaService] Connected to database successfully');
+        this.logger.log('[PrismaService] Connected to database successfully');
         return;
       } catch (error) {
         if (attempt === maxRetries) {
-          console.error('[PrismaService] Failed to connect to database after', maxRetries, 'attempts');
+          this.logger.error(`[PrismaService] Failed to connect after ${maxRetries} attempts`);
           throw error;
         }
-        console.warn(`[PrismaService] Failed to connect (attempt ${attempt}/${maxRetries}), retrying in ${retryDelayMs}ms...`);
+        this.logger.warn(`[PrismaService] Connection attempt ${attempt}/${maxRetries} failed, retrying in ${retryDelayMs}ms...`);
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
     }
