@@ -1,60 +1,64 @@
 services:
   - type: web
-    name: gatestack
+    name: gatestack-backend
     env: docker
-    region: oregon
+    region: us-east-1
     plan: starter
     branch: main
     dockerfile: Dockerfile
+    healthCheckPath: /health
+    
     envVars:
-      - key: SECRET_KEY
-        generateValue: true
+      # Node & Core
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "5000"
       - key: HOST
         value: 0.0.0.0
-      - key: DESKTOP_MODE
-        value: "0"
-      - key: SESSION_COOKIE_SECURE
-        value: "1"
-      - key: SESSION_COOKIE_HTTPONLY
-        value: "1"
-      - key: SESSION_COOKIE_SAMESITE
-        value: Strict
-      - key: PERMANENT_SESSION_LIFETIME
-        value: "300"
-      - key: REDIS_URL
-        value: ""
-      - key: LIMITER_STORAGE_URI
-        value: ""
-      - key: KMS_PROVIDER
-        value: file
-      - key: AUDIT_LOG_PATH
-        value: /tmp/audit.log
-      - key: GATESTACK_ASYNC_WORKER
-        value: "1"
-      - key: GATESTACK_ASYNC_POLL_SECONDS
-        value: "0.5"
-      - key: SESSION_LIFETIME
-        value: "300"
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_BUCKET
-        sync: false
-      - key: SUPABASE_SERVICE_KEY
-        sync: false
+      - key: LOG_LEVEL
+        value: info
+      
+      # Frontend URL (atualize com seu domínio)
+      - key: ALLOWED_ORIGIN
+        value: http://localhost:3000
+      
+      # JWT & Security (gerado automaticamente)
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      
+      # Admin padrão (MUDE APÓS PRIMEIRO LOGIN!)
+      - key: ADMIN_EMAIL
+        value: admin@gatestack.local
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      
+      # Métricas
+      - key: METRICS_TOKEN
+        generateValue: true
+      
+      # Rate Limiting
+      - key: THROTTLE_TTL
+        value: "60"
+      - key: THROTTLE_LIMIT
+        value: "120"
+      
+      # Publicação CVSS
+      - key: PUBLISH_MAX_CVSS
+        value: "7"
+      
+      # Database (vinculado automaticamente)
       - key: DATABASE_URL
         fromDatabase:
           name: gatestack-db
-          property: connectionString
 
 databases:
   - type: postgres
     name: gatestack-db
     plan: starter
-    region: oregon
+    region: us-east-1
     disk: 10
-    username: gatestack
-    database: gatestack
+    username: gatestack_user
+    database: gatestack_db
