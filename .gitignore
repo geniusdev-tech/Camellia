@@ -53,6 +53,7 @@ logs/
 *.stackdump
 *.dmp
 *.sql
+!backend/prisma/migrations/**/*.sql
 *.sqlite
 *.sqlite3
 *.db

@@ -10,11 +10,19 @@ export class GithubStrategy extends PassportStrategy(Strategy, 'github') {
 
   constructor(private authService: AuthService) {
     const env = parseEnv(process.env);
+    const hasGithubOauth =
+      Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_ID.trim()) &&
+      Boolean(env.GITHUB_CLIENT_SECRET && env.GITHUB_CLIENT_SECRET.trim()) &&
+      Boolean(env.GITHUB_CALLBACK_URL && env.GITHUB_CALLBACK_URL.trim());
+
+    if (!hasGithubOauth) {
+      throw new Error('GitHub OAuth is not fully configured. Set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and GITHUB_CALLBACK_URL.');
+    }
     
     super({
-      clientID: env.GITHUB_CLIENT_ID || 'dummy_id_if_missing',
-      clientSecret: env.GITHUB_CLIENT_SECRET || 'dummy_secret_if_missing',
-      callbackURL: env.GITHUB_CALLBACK_URL || 'http://localhost:5000/api/auth/github/callback',
+      clientID: env.GITHUB_CLIENT_ID!,
+      clientSecret: env.GITHUB_CLIENT_SECRET!,
+      callbackURL: env.GITHUB_CALLBACK_URL!,
       scope: ['user:email', 'read:user'],
     });
   }

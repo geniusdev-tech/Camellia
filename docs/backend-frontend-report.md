@@ -1,5 +1,73 @@
 # Relatorio Tecnico do Backend e Impacto no Frontend
 
+## Atualizacao 2026-04-05 (GitHub OAuth + Comunidade/Repos)
+
+### Escopo concluido
+
+- Login com GitHub via OAuth implementado no backend:
+  - `GET /api/auth/github`
+  - `GET /api/auth/github/callback`
+- Persistencia de dados do GitHub no `User`:
+  - `githubId`, `name`, `avatarUrl`, `githubToken`
+  - `passwordHash` agora opcional para suportar login social
+- Cache de repositorios GitHub no banco:
+  - tabela `github_repositories`
+  - endpoint autenticado `GET /api/github/repos`
+  - endpoint autenticado `POST /api/github/repos/sync`
+- Frontend atualizado para experiencia de comunidade/repositorios:
+  - botao "Continuar com GitHub" no login
+  - captura de token via query string no retorno do callback
+  - tratamento de erro OAuth no login
+  - avatar real e nome do GitHub no layout autenticado
+  - secoes de repositorios GitHub no dashboard e na pagina `/repository`
+
+### Migracao e banco de dados
+
+- Nova migracao criada e aplicada:
+  - `backend/prisma/migrations/20260405103000_github_oauth_and_repos/migration.sql`
+- Estado atual: migracoes aplicadas com sucesso no PostgreSQL local.
+
+### Configuracao de ambiente
+
+- Variaveis documentadas em `.env.example`:
+  - `GITHUB_CLIENT_ID`
+  - `GITHUB_CLIENT_SECRET`
+  - `GITHUB_CALLBACK_URL`
+- Validacao de env reforcada:
+  - se qualquer variavel GitHub estiver setada, as 3 devem estar setadas.
+
+### Validacao tecnica recente
+
+Backend:
+
+- `npm --prefix backend run type-check` ✅
+- `npm --prefix backend run prisma:migrate:deploy` ✅
+- `npm --prefix backend run test -- auth.controller.github.spec.ts secret-crypto.spec.ts` ✅
+
+Frontend:
+
+- `npm --prefix frontend run type-check` ✅
+
+### Observacao operacional (frontend local)
+
+Para fluxo local com frontend em `http://localhost:3000`:
+
+- manter `ALLOWED_ORIGIN=http://localhost:3000,http://127.0.0.1:3000`
+- manter callback OAuth no backend conforme app GitHub
+- backend redireciona para `/login?oauth=success` no frontend local
+
+### Mitigacoes de seguranca aplicadas
+
+- Remocao de token JWT da query string no callback OAuth:
+  - callback agora usa cookie temporario `httpOnly` e redireciona com `?oauth=success`
+  - endpoint de troca: `GET /api/auth/github/session`
+- Token de acesso do GitHub agora protegido em repouso:
+  - criptografia simetrica AES-GCM (`v1`) antes de persistir em `users.github_token`
+  - leitura com fallback para legado nao criptografado
+- Cache de repositorios GitHub corrigido para escopo por usuario:
+  - chave unica composta (`user_id`, `github_id`)
+  - permite mesmo repo aparecer em contas diferentes sem colisao
+
 ## Estado Atual (Atualizado)
 
 Backend consolidado em **Node.js + TypeScript** com arquitetura NestJS.

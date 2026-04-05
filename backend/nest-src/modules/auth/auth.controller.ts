@@ -10,6 +10,29 @@ import { loginSchema, registerSchema, type LoginInput, type RegisterInput } from
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  private readCookie(rawCookie: string | undefined, name: string): string | null {
+    if (!rawCookie) return null;
+    const match = rawCookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${name}=`));
+    if (!match) return null;
+    return decodeURIComponent(match.slice(name.length + 1));
+  }
+
+  private oauthCookieOptions(req: Request) {
+    const forwardedProto = String(req.headers['x-forwarded-proto'] || '').toLowerCase();
+    const isSecure = req.secure || forwardedProto === 'https';
+    const sameSite: 'none' | 'lax' = isSecure ? 'none' : 'lax';
+    return {
+      httpOnly: true as const,
+      secure: isSecure,
+      sameSite,
+      path: '/' as const,
+      maxAge: 2 * 60 * 1000,
+    };
+  }
+
   @Post('login')
   @UsePipes(new ZodValidationPipe(loginSchema))
   async login(@Body() body: LoginInput) {
@@ -34,14 +57,27 @@ export class AuthController {
   @UseGuards(AuthGuard('github'))
   async githubAuthCallback(@Req() req: Request, @Res() res: Response) {
     const frontendUrl = process.env.ALLOWED_ORIGIN?.split(',')[0]?.trim() || 'http://localhost:3000';
+    const cookieOptions = this.oauthCookieOptions(req);
 
     try {
       const { accessToken } = await this.authService.githubLogin(req.user);
-      const encodedToken = encodeURIComponent(accessToken);
-      res.redirect(`${frontendUrl}/login?token=${encodedToken}`);
+      res.cookie('gatestack_oauth_token', accessToken, cookieOptions);
+      res.redirect(`${frontendUrl}/login?oauth=success`);
     } catch {
+      res.clearCookie('gatestack_oauth_token', cookieOptions);
       res.redirect(`${frontendUrl}/login?error=github_oauth_failed`);
     }
+  }
+
+  @Get('github/session')
+  async githubSession(@Req() req: Request, @Res() res: Response) {
+    const cookieOptions = this.oauthCookieOptions(req);
+    const token = this.readCookie(req.headers.cookie, 'gatestack_oauth_token');
+    res.clearCookie('gatestack_oauth_token', cookieOptions);
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'GitHub session not found' });
+    }
+    return res.json({ success: true, accessToken: token });
   }
 
   @Get('me')

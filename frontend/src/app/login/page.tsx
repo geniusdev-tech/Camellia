@@ -13,6 +13,7 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const setSession = useAuthStore((state) => state.setSession)
+  const logout = useAuthStore((state) => state.logout)
 
   const [mode, setMode] = useState<Mode>('login')
   const [email, setEmail] = useState('')
@@ -26,10 +27,48 @@ function LoginForm() {
   // GitHub token capture
   useEffect(() => {
     const token = searchParams.get('token')
+    const oauthSuccess = searchParams.get('oauth') === 'success'
     const oauthError = searchParams.get('error')
     if (oauthError) {
+      logout()
       setError('Falha no login com GitHub. Tente novamente.')
       setLoading(false)
+      return
+    }
+
+    if (oauthSuccess) {
+      setLoading(true)
+      authAPI.githubSession()
+        .then((sessionRes) => {
+          useAuthStore.getState().updateAccessToken(sessionRes.accessToken)
+          return authAPI.me().then((meRes) => ({ meRes, accessToken: sessionRes.accessToken }))
+        })
+        .then(({ meRes, accessToken }) => {
+          if (meRes.success && meRes.user) {
+            setSession(
+              {
+                user_id: meRes.user.user_id || meRes.user.id,
+                email: meRes.user.email,
+                name: meRes.user.name,
+                avatarUrl: meRes.user.avatarUrl,
+                github_id: meRes.user.githubId || meRes.user.github_id,
+                has_2fa: meRes.user.has_2fa || false,
+                role: meRes.user.role || null,
+              },
+              accessToken,
+            )
+            router.replace('/dashboard')
+            return
+          }
+          logout()
+          setError('Falha ao obter perfil do GitHub')
+          setLoading(false)
+        })
+        .catch(() => {
+          logout()
+          setError('Erro ao validar sessão do GitHub')
+          setLoading(false)
+        })
       return
     }
 
@@ -54,16 +93,18 @@ function LoginForm() {
             )
             router.replace('/dashboard')
           } else {
+            logout()
             setError('Falha ao obter perfil do GitHub')
             setLoading(false)
           }
         })
         .catch(() => {
+          logout()
           setError('Erro ao validar token do GitHub')
           setLoading(false)
         })
     }
-  }, [searchParams, router, setSession])
+  }, [searchParams, router, setSession, logout])
 
   const handleGithubLogin = async () => {
     setLoading(true)

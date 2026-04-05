@@ -63,7 +63,7 @@ model User {
 
 model GitHubRepository {
   id            String   @id @default(uuid())
-  githubId      Int      @unique @map("github_id")
+  githubId      Int      @map("github_id")
   userId        String   @map("user_id")
   name          String
   fullName      String   @map("full_name")
@@ -78,6 +78,8 @@ model GitHubRepository {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([githubId])
+  @@unique([userId, githubId])
   @@map("github_repositories")
 }
 

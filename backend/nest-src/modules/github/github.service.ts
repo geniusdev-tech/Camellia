@@ -1,10 +1,13 @@
 import { ForbiddenException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import axios from 'axios';
 import { PrismaService } from '../../prisma/prisma.service';
+import { parseEnv } from '../../common/config/env.schema';
+import { openSecret } from '../../common/security/secret-crypto';
 
 @Injectable()
 export class GithubService {
   private readonly logger = new Logger(GithubService.name);
+  private readonly env = parseEnv(process.env);
 
   constructor(private prisma: PrismaService) {}
 
@@ -13,11 +16,12 @@ export class GithubService {
     if (!user || !user.githubToken) {
       throw new UnauthorizedException('User has not linked a GitHub account or token is missing');
     }
+    const decryptedToken = openSecret(user.githubToken, this.env.JWT_SECRET) || user.githubToken;
 
     try {
       const response = await axios.get('https://api.github.com/user/repos?visibility=public&sort=updated&per_page=30', {
         headers: {
-          Authorization: `Bearer ${user.githubToken}`,
+          Authorization: `Bearer ${decryptedToken}`,
           Accept: 'application/vnd.github.v3+json',
         },
       });
@@ -28,7 +32,12 @@ export class GithubService {
       const syncedRepos = [];
       for (const repo of repos) {
         const synced = await this.prisma.gitHubRepository.upsert({
-          where: { githubId: repo.id },
+          where: {
+            userId_githubId: {
+              userId: user.id,
+              githubId: repo.id,
+            },
+          },
           update: {
             name: repo.name,
             fullName: repo.full_name,

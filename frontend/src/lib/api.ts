@@ -309,6 +309,13 @@ export const authAPI = {
   me: () =>
     fetchAPI<{ success: boolean; user: import('./types').AuthUser }>('/api/auth/me'),
 
+  githubSession: () =>
+    fetchAPI<{ success: boolean; accessToken: string }>(
+      '/api/auth/github/session',
+      undefined,
+      { skipAuthRefresh: true },
+    ),
+
   setup2FA: () =>
     fetchAPI<Setup2FAResponse>('/api/auth/mfa/setup', { method: 'POST' }),
 

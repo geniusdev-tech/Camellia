@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { parseEnv } from '../../common/config/env.schema';
+import { sealSecret } from '../../common/security/secret-crypto';
 import type { Role } from '../../common/decorators/roles.decorator';
 import type { LoginInput } from './auth.schemas';
 import type { RegisterInput } from './auth.schemas';
@@ -112,7 +113,7 @@ export class AuthService implements OnModuleInit {
           githubId: profile.githubId,
           name: profile.name || user.name,
           avatarUrl: profile.avatarUrl || user.avatarUrl,
-          githubToken: profile.githubToken,
+          githubToken: sealSecret(profile.githubToken, this.env.JWT_SECRET),
         },
       });
     } else {
@@ -124,7 +125,7 @@ export class AuthService implements OnModuleInit {
           githubId: profile.githubId,
           name: profile.name,
           avatarUrl: profile.avatarUrl,
-          githubToken: profile.githubToken,
+          githubToken: sealSecret(profile.githubToken, this.env.JWT_SECRET),
           role: 'reader',
         },
       });
