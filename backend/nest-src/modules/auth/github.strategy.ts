@@ -41,8 +41,8 @@ export class GithubStrategy extends PassportStrategy(Strategy, 'github') {
 
       return done(null, user);
     } catch (error) {
-      this.logger.error(error);
-      return done(error, false);
+      this.logger.error('GitHub OAuth validation failed', error instanceof Error ? error.stack : undefined);
+      return done(null, false, { message: 'GitHub OAuth validation failed' });
     }
   }
 }

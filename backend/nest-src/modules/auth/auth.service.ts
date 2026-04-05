@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { parseEnv } from '../../common/config/env.schema';
@@ -96,42 +97,73 @@ export class AuthService implements OnModuleInit {
   }
 
   async validateGithubUser(profile: { githubId: string; email?: string; name?: string; avatarUrl?: string; githubToken: string }) {
-    let user = await this.prisma.user.findFirst({
-      where: {
-        OR: [
-          { githubId: profile.githubId },
-          ...(profile.email ? [{ email: profile.email.toLowerCase() }] : []),
-        ],
-      },
+    const normalizedEmail = profile.email?.toLowerCase();
+    const encryptedGithubToken = sealSecret(profile.githubToken, this.env.JWT_SECRET);
+
+    let user = await this.prisma.user.findUnique({
+      where: { githubId: profile.githubId },
     });
 
     if (user) {
-      // Update existing user with latest github info
-      user = await this.prisma.user.update({
+      return this.prisma.user.update({
         where: { id: user.id },
         data: {
-          githubId: profile.githubId,
           name: profile.name || user.name,
           avatarUrl: profile.avatarUrl || user.avatarUrl,
-          githubToken: sealSecret(profile.githubToken, this.env.JWT_SECRET),
-        },
-      });
-    } else {
-      // Create new user. Since they might not have a public email, fallback to a dummy one if needed
-      const fallbackEmail = profile.email || `${profile.githubId}@github.gatestack.local`;
-      user = await this.prisma.user.create({
-        data: {
-          email: fallbackEmail.toLowerCase(),
-          githubId: profile.githubId,
-          name: profile.name,
-          avatarUrl: profile.avatarUrl,
-          githubToken: sealSecret(profile.githubToken, this.env.JWT_SECRET),
-          role: 'reader',
+          githubToken: encryptedGithubToken,
         },
       });
     }
 
-    return user;
+    if (normalizedEmail) {
+      const emailUser = await this.prisma.user.findUnique({
+        where: { email: normalizedEmail },
+      });
+
+      if (emailUser) {
+        if (emailUser.githubId && emailUser.githubId !== profile.githubId) {
+          throw new ConflictException('Email already linked to another GitHub account');
+        }
+        return this.prisma.user.update({
+          where: { id: emailUser.id },
+          data: {
+            githubId: profile.githubId,
+            name: profile.name || emailUser.name,
+            avatarUrl: profile.avatarUrl || emailUser.avatarUrl,
+            githubToken: encryptedGithubToken,
+          },
+        });
+      }
+    }
+
+    const fallbackEmail = normalizedEmail || `${profile.githubId}@github.gatestack.local`;
+    try {
+      return await this.prisma.user.create({
+        data: {
+          email: fallbackEmail,
+          githubId: profile.githubId,
+          name: profile.name,
+          avatarUrl: profile.avatarUrl,
+          githubToken: encryptedGithubToken,
+          role: 'reader',
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        user = await this.prisma.user.findUnique({ where: { githubId: profile.githubId } });
+        if (user) {
+          return this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+              name: profile.name || user.name,
+              avatarUrl: profile.avatarUrl || user.avatarUrl,
+              githubToken: encryptedGithubToken,
+            },
+          });
+        }
+      }
+      throw error;
+    }
   }
 
   async githubLogin(user: any): Promise<{ accessToken: string }> {
