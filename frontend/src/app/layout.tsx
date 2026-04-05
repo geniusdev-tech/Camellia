@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Orbitron, Rajdhani, Share_Tech_Mono } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/components/providers'
+import { NetworkGridWrapper } from '@/components/ui/NetworkGridWrapper'
 
 const fontSans = Rajdhani({
   subsets: ['latin'],
@@ -33,9 +34,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR" className={`dark scroll-smooth ${fontSans.variable} ${fontMono.variable} ${fontDisplay.variable}`}>
       <body className="min-h-screen antialiased bg-dark-950 text-white">
-        <main>
+        <NetworkGridWrapper />
+        <div className="relative z-10">
           <Providers>{children}</Providers>
-        </main>
+        </div>
       </body>
     </html>
   )

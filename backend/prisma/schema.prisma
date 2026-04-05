@@ -41,7 +41,11 @@ enum ReactionType {
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
-  passwordHash String   @map("password_hash")
+  passwordHash String?  @map("password_hash")
+  name         String?
+  avatarUrl    String?  @map("avatar_url")
+  githubId     String?  @unique @map("github_id")
+  githubToken  String?  @map("github_token")
   role         UserRole @default(reader)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -52,8 +56,29 @@ model User {
   socialBookmarks     SocialBookmark[]
   socialReposts       SocialRepost[]
   communityMembership SocialCommunityMember[]
+  githubRepositories  GitHubRepository[]
 
   @@map("users")
+}
+
+model GitHubRepository {
+  id            String   @id @default(uuid())
+  githubId      Int      @unique @map("github_id")
+  userId        String   @map("user_id")
+  name          String
+  fullName      String   @map("full_name")
+  description   String?
+  htmlUrl       String   @map("html_url")
+  language      String?
+  stargazers    Int      @default(0)
+  forks         Int      @default(0)
+  dbCreatedAt   DateTime @default(now()) @map("db_created_at")
+  dbUpdatedAt   DateTime @updatedAt @map("db_updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("github_repositories")
 }
 
 model Release {

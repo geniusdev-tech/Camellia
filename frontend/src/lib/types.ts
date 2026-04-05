@@ -26,8 +26,13 @@ export interface Verify2FARequest {
 }
 
 export interface AuthUser {
-  user_id?: number
+  user_id?: number | string
+  id?: string
   email: string
+  name?: string | null
+  avatarUrl?: string | null
+  github_id?: string | null
+  githubId?: string | null
   has_2fa: boolean
   role?: string | null
 }
@@ -37,6 +42,9 @@ export interface LoginResponse extends ApiResponse {
   accessToken?: string
   refresh_token?: string
   email?: string
+  name?: string | null
+  avatarUrl?: string | null
+  github_id?: string | null
   has_2fa?: boolean
   role?: string | null
   requires_mfa?: boolean
@@ -341,4 +349,24 @@ export interface SocialSidebarResponse extends ApiResponse {
   communities: SocialSidebarCommunity[]
   trends: SocialSidebarTrend[]
   suggestedUsers: SocialSuggestedUser[]
+}
+
+export interface GithubRepository {
+  id: string
+  githubId: number
+  userId: string
+  name: string
+  fullName: string
+  description?: string | null
+  htmlUrl: string
+  language?: string | null
+  stargazers: number
+  forks: number
+  dbCreatedAt: string
+  dbUpdatedAt: string
+}
+
+export interface GithubReposResponse extends ApiResponse {
+  count: number
+  repos: GithubRepository[]
 }

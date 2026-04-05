@@ -73,7 +73,7 @@ export class AuthService implements OnModuleInit {
 
   async login(payload: LoginInput): Promise<{ accessToken: string }> {
     const user = await this.prisma.user.findUnique({ where: { email: payload.email.toLowerCase() } });
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (!user || user.passwordHash === null) throw new UnauthorizedException('Invalid credentials');
 
     const valid = await bcrypt.compare(payload.password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
@@ -92,5 +92,65 @@ export class AuthService implements OnModuleInit {
       secret: this.env.JWT_SECRET,
       expiresIn: this.env.JWT_EXPIRES_IN,
     });
+  }
+
+  async validateGithubUser(profile: { githubId: string; email?: string; name?: string; avatarUrl?: string; githubToken: string }) {
+    let user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { githubId: profile.githubId },
+          ...(profile.email ? [{ email: profile.email.toLowerCase() }] : []),
+        ],
+      },
+    });
+
+    if (user) {
+      // Update existing user with latest github info
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          githubId: profile.githubId,
+          name: profile.name || user.name,
+          avatarUrl: profile.avatarUrl || user.avatarUrl,
+          githubToken: profile.githubToken,
+        },
+      });
+    } else {
+      // Create new user. Since they might not have a public email, fallback to a dummy one if needed
+      const fallbackEmail = profile.email || `${profile.githubId}@github.gatestack.local`;
+      user = await this.prisma.user.create({
+        data: {
+          email: fallbackEmail.toLowerCase(),
+          githubId: profile.githubId,
+          name: profile.name,
+          avatarUrl: profile.avatarUrl,
+          githubToken: profile.githubToken,
+          role: 'reader',
+        },
+      });
+    }
+
+    return user;
+  }
+
+  async githubLogin(user: any): Promise<{ accessToken: string }> {
+    const accessToken = await this.signToken({
+      sub: user.id,
+      email: user.email,
+      role: user.role as Role,
+    });
+    return { accessToken };
+  }
+
+  async getUserById(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { passwordHash: _ph, githubToken: _gt, ...safeUser } = user;
+    return { ...safeUser, has_2fa: false };
   }
 }

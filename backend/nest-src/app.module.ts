@@ -11,6 +11,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { parseEnv } from './common/config/env.schema';
 import { AuthModule } from './modules/auth/auth.module';
 import { SocialModule } from './modules/social/social.module';
+import { GithubModule } from './modules/github/github.module';
 
 const env = parseEnv(process.env);
 
@@ -61,6 +62,7 @@ const env = parseEnv(process.env);
     HealthModule,
     ReleasesModule,
     SocialModule,
+    GithubModule,
     MetricsModule,
     QueueModule,
   ],

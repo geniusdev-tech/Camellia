@@ -29,6 +29,19 @@ const envSchema = z.object({
   THROTTLE_LIMIT: z.coerce.number().int().positive().default(120),
   PUBLISH_MAX_CVSS: z.coerce.number().min(0).max(10).default(7),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  GITHUB_CLIENT_ID: z.string().optional(),
+  GITHUB_CLIENT_SECRET: z.string().optional(),
+  GITHUB_CALLBACK_URL: z.string().optional(),
+}).superRefine((env, ctx) => {
+  const githubValues = [env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET, env.GITHUB_CALLBACK_URL];
+  const configuredCount = githubValues.filter((value) => Boolean(value && value.trim())).length;
+  if (configuredCount > 0 && configuredCount < githubValues.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['GITHUB_CLIENT_ID'],
+      message: 'Set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and GITHUB_CALLBACK_URL together',
+    });
+  }
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

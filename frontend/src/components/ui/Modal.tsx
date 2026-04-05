@@ -34,7 +34,7 @@ export function Modal({ open, title, children, onClose, footer }: ModalProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md"
           onClick={onClose}
         >
           <motion.div
@@ -44,7 +44,7 @@ export function Modal({ open, title, children, onClose, footer }: ModalProps) {
             role="dialog"
             aria-modal="true"
             aria-label={title}
-            className="glass w-full max-w-2xl rounded-2xl shadow-panel"
+            className="glass w-full max-w-2xl rounded-2xl animate-border-glow"
             onClick={(event) => event.stopPropagation()}
           >
             <header className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">

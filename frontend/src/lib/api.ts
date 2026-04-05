@@ -5,6 +5,7 @@ import type {
   CreateReleaseRequest,
   CreateReleaseResponse,
   DownloadResponse,
+  GithubReposResponse,
   LoginMFARequest,
   LoginRequest,
   LoginResponse,
@@ -305,6 +306,9 @@ export const authAPI = {
   status: () =>
     fetchAPI<LoginResponse>('/api/auth/status'),
 
+  me: () =>
+    fetchAPI<{ success: boolean; user: import('./types').AuthUser }>('/api/auth/me'),
+
   setup2FA: () =>
     fetchAPI<Setup2FAResponse>('/api/auth/mfa/setup', { method: 'POST' }),
 
@@ -495,6 +499,14 @@ export const socialAPI = {
       `/api/social/communities/${encodeURIComponent(communityId)}/toggle`,
       { method: 'POST' },
     ),
+}
+
+export const githubAPI = {
+  repos: () =>
+    fetchAPI<GithubReposResponse>('/api/github/repos'),
+  
+  sync: () =>
+    fetchAPI<GithubReposResponse>('/api/github/repos/sync', { method: 'POST' }),
 }
 
 export { ApiError, fetchAPI }
