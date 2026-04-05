@@ -1,77 +1,10 @@
-# Build / Development
-.DS_Store
-*.log
-logs/
-*.swp
-*.swo
-*~
-.vscode/
-.idea/
-.git/
-.github/
-.gitignore
-.npmrc
-.env*
-.env
+# Max-security policy:
+# Ignore everything by default and allow only minimal package metadata.
+*
 
-# Test & Source
-jest.config.*
-*.spec.ts
-*.test.ts
-src/
-test/
-tests/
-__tests__/
-coverage/
-.nyc_output/
-
-# Documentation
-docs/
-README.md
-CHANGELOG.md
-LICENSE
-.vercelignore
-.codex
-
-# Dependencies & Build
-node_modules/
-.next/
-out/
-dist/
-build/
-tsconfig.json
-tsconfig.*.json
-.babelrc
-.prettierrc*
-eslint*
-Dockerfile
-docker-compose.yml
-
-# Rust / Tauri  
-src-tauri/
-Cargo.toml
-Cargo.lock
-Makefile
-scripts/
-
-# Secrets & Config
-firebase.json
-.secrets.baseline
-*.key
-*.pem
-*.crt
-*.p12
-vault/
-
-# Infrastructure
-infra/
-fly.toml
-render.yaml
-vercel.json
-
-# Root files (keep only necessary)
-.vercel
-.codex
-frontend/
-backend/
-package-lock.json
+# Minimal allowlist
+!package.json
+!README.md
+!LICENSE
+!LICENSE.*
+!CHANGELOG.md
