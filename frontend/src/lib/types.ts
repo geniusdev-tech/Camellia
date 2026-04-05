@@ -389,3 +389,63 @@ export interface GithubProfile {
 export interface GithubProfileResponse extends ApiResponse {
   profile: GithubProfile
 }
+
+export type GithubRepoScope = 'all' | 'owner' | 'org'
+export type GithubRepoSort = 'stars' | 'updated' | 'forks'
+
+export interface GithubDashboardRepository {
+  id: number
+  name: string
+  fullName: string
+  description?: string | null
+  htmlUrl: string
+  language?: string | null
+  stargazers: number
+  forks: number
+  updatedAt: string
+  openIssues: number
+  ownerLogin: string
+  ownerType: string
+  defaultBranch?: string | null
+  license?: string | null
+}
+
+export interface GithubRecentActivity {
+  type: 'commit' | 'pull_request' | 'issue'
+  repo: string
+  createdAt: string
+  title: string
+  url: string
+}
+
+export interface GithubDashboardResponse extends ApiResponse {
+  tokenStatus: 'ok' | 'expired'
+  sync: {
+    lastSyncedAt: string | null
+    cachedRepos: number
+  }
+  profile: GithubProfile
+  topRepositories: GithubDashboardRepository[]
+  recentActivity: GithubRecentActivity[]
+  health: {
+    languages: Array<{ language: string; count: number }>
+    reposWithoutDescription: number
+    reposWithoutLicense: number
+    reposWithOpenIssuesAboveThreshold: number
+    issuesThreshold: number
+  }
+  security: {
+    scannedRepos: number
+    withBranchProtection: number
+    withoutBranchProtection: number
+    reposWithDependabotAlerts: number | null
+    reposWithCodeScanningAlerts: number | null
+    dependabotAvailable: boolean
+    codeScanningAvailable: boolean
+  }
+  quickActions: {
+    githubProfileUrl: string
+    openPullRequestsUrl: string
+    createIssueUrl: string | null
+  }
+}

@@ -5,6 +5,9 @@ import type {
   CreateReleaseRequest,
   CreateReleaseResponse,
   DownloadResponse,
+  GithubDashboardResponse,
+  GithubRepoScope,
+  GithubRepoSort,
   GithubProfileResponse,
   GithubReposResponse,
   LoginMFARequest,
@@ -510,6 +513,13 @@ export const socialAPI = {
 }
 
 export const githubAPI = {
+  dashboard: (params?: { sortBy?: GithubRepoSort; scope?: GithubRepoScope; issuesThreshold?: number }) =>
+    fetchAPI<GithubDashboardResponse>(`/api/github/dashboard${queryString({
+      sortBy: params?.sortBy,
+      scope: params?.scope,
+      issuesThreshold: params?.issuesThreshold,
+    })}`),
+
   profile: () =>
     fetchAPI<GithubProfileResponse>('/api/github/profile'),
 

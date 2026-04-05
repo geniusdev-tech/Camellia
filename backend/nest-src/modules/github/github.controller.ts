@@ -7,6 +7,15 @@ import { GithubService } from './github.service';
 export class GithubController {
   constructor(private readonly githubService: GithubService) {}
 
+  @Get('dashboard')
+  async getDashboard(@Req() req: any) {
+    const data = await this.githubService.getDashboardData(
+      req.user.sub,
+      req.query || {},
+    );
+    return { success: true, ...data };
+  }
+
   @Get('profile')
   async getProfile(@Req() req: any) {
     const profile = await this.githubService.getUserProfile(req.user.sub);

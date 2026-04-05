@@ -175,7 +175,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top bar */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/5 px-4 lg:px-6 glass-subtle" style={{ borderRadius: 0 }}>
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/5 px-3 sm:px-4 lg:px-6 glass-subtle" style={{ borderRadius: 0 }}>
           <button
             onClick={() => setOpen(true)}
             className="rounded-xl p-2 text-gray-500 transition-all hover:bg-white/5 hover:text-white lg:hidden"
@@ -215,7 +215,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
           <motion.div
             key={pathname}
             initial={{ opacity: 0, y: 8 }}

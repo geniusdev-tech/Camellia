@@ -168,8 +168,8 @@ export default function SettingsPage() {
     <div className="social-page">
       <section className="social-hero">
         <p className="text-xs font-mono uppercase tracking-[0.2em] text-cyan-300">Feed da Conta</p>
-        <h1 className="mt-2 text-3xl font-bold text-white">Conta, segurança e sessões</h1>
-        <p className="mt-2 max-w-3xl text-sm text-gray-400">Controle 2FA, notificações, criptografia e ações sensíveis em um fluxo único.</p>
+        <h1 className="mt-2 text-3xl sm:text-4xl font-bold text-white">Conta, segurança e sessões</h1>
+        <p className="mt-3 max-w-3xl text-sm text-gray-300">Controle 2FA, notificações, criptografia e ações sensíveis em um fluxo único.</p>
       </section>
 
       <section className="social-layout">

@@ -39,8 +39,8 @@ export default function RepositoryPage() {
     <div className="social-page">
       <section className="social-hero">
         <p className="text-xs font-mono uppercase tracking-[0.2em] text-cyan-300">Feed do Repositório</p>
-        <h1 className="mt-2 text-3xl font-bold text-white">Timeline de releases</h1>
-        <p className="mt-2 max-w-3xl text-sm text-gray-400">
+        <h1 className="mt-2 text-3xl sm:text-4xl font-bold text-white">Timeline de releases</h1>
+        <p className="mt-3 max-w-3xl text-sm text-gray-300">
           Navegue por versões, publique atualizações e acompanhe o estado do repositório como um feed de atividade.
         </p>
       </section>
@@ -65,7 +65,7 @@ export default function RepositoryPage() {
         </aside>
 
         <main>
-          <section className="glass rounded-2xl p-5 mb-4">
+          <section className="glass rounded-2xl p-4 sm:p-5 mb-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">GitHub</p>
@@ -116,14 +116,14 @@ export default function RepositoryPage() {
             )}
 
             {githubLinked && githubRepos.length > 0 && (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 grid gap-2.5 sm:gap-3 sm:grid-cols-2">
                 {githubRepos.slice(0, 8).map((repo) => (
                   <a
                     key={repo.id}
                     href={repo.htmlUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-xl border border-white/10 bg-white/3 px-3 py-2.5 hover:bg-white/5 transition-all"
+                    className="rounded-xl border border-white/10 bg-white/3 px-3 py-2.5 hover:bg-white/5 hover:border-cyan-400/25 transition-all"
                   >
                     <p className="text-sm font-medium text-white truncate">{repo.fullName}</p>
                     <p className="mt-1 text-xs text-gray-500 line-clamp-2">{repo.description || 'Sem descrição.'}</p>

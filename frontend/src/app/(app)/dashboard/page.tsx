@@ -1,377 +1,270 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ActivitySquare,
+  AlertTriangle,
   ArrowRight,
+  BookOpen,
   Building2,
-  Bookmark,
   ExternalLink,
-  FolderGit2,
+  GitCommitHorizontal,
+  GitPullRequest,
   Globe2,
   Heart,
   Link2,
-  Lightbulb,
   MapPin,
-  MessageCircle,
-  Repeat2,
+  MessageSquare,
+  RefreshCw,
   ShieldCheck,
+  ShieldX,
+  Star,
   Users,
 } from 'lucide-react'
-import { StatsBar } from '@/components/features/StatsBar'
-import { socialAPI, githubAPI } from '@/lib/api'
-import type { GithubRepository, SocialFeedPost } from '@/lib/types'
+import { githubAPI } from '@/lib/api'
+import type { GithubRepoScope, GithubRepoSort } from '@/lib/types'
 import { useAuthStore } from '@/store/auth'
 
-const areas = [
-  { href: '/repository', title: 'Repositório', icon: FolderGit2 },
-  { href: '/teams', title: 'Times', icon: Users },
-  { href: '/ops', title: 'Operações', icon: ActivitySquare },
-  { href: '/catalog', title: 'Catálogo', icon: Globe2 },
-]
+function MetricCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+  return (
+    <div className="glass rounded-2xl p-4">
+      <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-gray-500">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-white">{value}</p>
+      {sub ? <p className="mt-1 text-xs text-gray-400">{sub}</p> : null}
+    </div>
+  )
+}
 
 export default function DashboardPage() {
   const qc = useQueryClient()
   const { user } = useAuthStore()
+  const githubLinked = Boolean(user?.github_id || user?.githubId)
+  const [scope, setScope] = useState<GithubRepoScope>('all')
+  const [sortBy, setSortBy] = useState<GithubRepoSort>('updated')
+  const [issuesThreshold, setIssuesThreshold] = useState(10)
 
-  const feedQuery = useQuery({
-    queryKey: ['social', 'feed'],
-    queryFn: socialAPI.feed,
-    staleTime: 15_000,
+  const dashboardQuery = useQuery({
+    queryKey: ['github', 'dashboard', scope, sortBy, issuesThreshold],
+    queryFn: () => githubAPI.dashboard({ scope, sortBy, issuesThreshold }),
+    enabled: githubLinked,
+    staleTime: 45_000,
   })
 
-  const sidebarQuery = useQuery({
-    queryKey: ['social', 'sidebar'],
-    queryFn: socialAPI.sidebar,
-    staleTime: 30_000,
-  })
-
-  const reposQuery = useQuery({
-    queryKey: ['github', 'repos'],
-    queryFn: githubAPI.repos,
-    enabled: !!user?.github_id || !!user?.githubId,
-    staleTime: 60_000,
-  })
-  const profileQuery = useQuery({
-    queryKey: ['github', 'profile'],
-    queryFn: githubAPI.profile,
-    enabled: !!user?.github_id || !!user?.githubId,
-    staleTime: 60_000,
-  })
-
-  const syncReposMutation = useMutation({
+  const syncMutation = useMutation({
     mutationFn: githubAPI.sync,
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['github', 'dashboard'] })
       qc.invalidateQueries({ queryKey: ['github', 'repos'] })
+      qc.invalidateQueries({ queryKey: ['github', 'profile'] })
     },
   })
 
-  const invalidateSocial = () => {
-    qc.invalidateQueries({ queryKey: ['social', 'feed'] })
-    qc.invalidateQueries({ queryKey: ['social', 'sidebar'] })
+  const data = dashboardQuery.data
+  const activityIcon = useMemo(() => ({
+    commit: GitCommitHorizontal,
+    pull_request: GitPullRequest,
+    issue: MessageSquare,
+  }), [])
+
+  if (!githubLinked) {
+    return (
+      <div className="social-page">
+        <section className="social-hero">
+          <p className="text-xs font-mono uppercase tracking-[0.25em] text-cyan-300">GitHub Dashboard</p>
+          <h1 className="mt-2 text-3xl sm:text-4xl font-bold text-white">Conecte sua conta GitHub</h1>
+          <p className="mt-3 text-sm text-gray-300">Para ver perfil, atividade, saúde e segurança dos repositórios.</p>
+          <Link href="/login" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-cyan-400/20 border border-cyan-400/30 px-4 py-2 text-cyan-100">
+            Ir para login <ArrowRight className="h-4 w-4" />
+          </Link>
+        </section>
+      </div>
+    )
   }
-
-  const reactMutation = useMutation({
-    mutationFn: ({ postId, reactionType }: { postId: string; reactionType: 'like' | 'insight' | 'celebrate' }) =>
-      socialAPI.react(postId, reactionType),
-    onSuccess: invalidateSocial,
-  })
-
-  const bookmarkMutation = useMutation({
-    mutationFn: (postId: string) => socialAPI.bookmarkToggle(postId),
-    onSuccess: invalidateSocial,
-  })
-
-  const repostMutation = useMutation({
-    mutationFn: (postId: string) => socialAPI.repostToggle(postId),
-    onSuccess: invalidateSocial,
-  })
-
-  const commentMutation = useMutation({
-    mutationFn: (postId: string) => socialAPI.comment(postId, 'Feedback positivo no feed.'),
-    onSuccess: invalidateSocial,
-  })
-
-  const communityMutation = useMutation({
-    mutationFn: (communityId: string) => socialAPI.communityToggle(communityId),
-    onSuccess: invalidateSocial,
-  })
-
-  const posts = feedQuery.data?.posts ?? []
-  const communities = sidebarQuery.data?.communities ?? []
-  const githubRepos = reposQuery.data?.repos ?? []
-  const githubProfile = profileQuery.data?.profile
-
-  const fallbackPosts = useMemo<SocialFeedPost[]>(
-    () =>
-      areas.map((area, idx) => ({
-        id: `fallback-${area.href}`,
-        createdAt: new Date(Date.now() - idx * 60_000).toISOString(),
-        content: `Atualização no módulo ${area.title}.`,
-        release: {
-          id: `fallback-release-${idx}`,
-          packageName: area.title.toLowerCase(),
-          packageVersion: '1.0.0',
-          releaseChannel: 'stable',
-          deploymentEnv: 'prod',
-          status: 'published',
-        },
-        author: { id: 'system', email: 'system@gatestack.local' },
-        stats: {
-          reactions: { like: 0, insight: 0, celebrate: 0 },
-          comments: 0,
-          reposts: 0,
-          bookmarks: 0,
-        },
-        viewer: {
-          reactionType: null,
-          bookmarked: false,
-          reposted: false,
-        },
-      })),
-    [],
-  )
-
-  const visiblePosts = posts.length ? posts : fallbackPosts
 
   return (
     <div className="social-page">
-      {/* Hero */}
-      <section className="glass rounded-2xl p-6 mb-6 animate-fade-up">
-        <p className="text-xs font-mono uppercase tracking-[0.25em] text-cyan-400">Feed Principal</p>
-        <h1 className="mt-2 text-2xl sm:text-3xl font-bold leading-tight text-white">
-          Feed de releases, times e operações
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm text-gray-500">
-          Atividade social conectada ao backend: comunidades, tendências, reações e bookmarks.
-        </p>
-      </section>
-
-      <StatsBar />
-
-      {/* GitHub Repositories (Only if linked) */}
-      {(user?.github_id || user?.githubId) && (
-        <section className="mt-6 mb-6 animate-fade-up">
-          {githubProfile && (
-            <div className="mb-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <img src={githubProfile.avatarUrl} alt={githubProfile.login} className="h-12 w-12 rounded-full border border-white/10 object-cover" />
-                <div className="min-w-0">
-                  <p className="text-white font-semibold truncate">{githubProfile.name || githubProfile.login}</p>
-                  <a
-                    href={githubProfile.htmlUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:text-cyan-200"
-                  >
-                    @{githubProfile.login} <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-                <div className="ml-auto flex flex-wrap gap-2 text-xs">
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-gray-300">{githubProfile.followers} seguidores</span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-gray-300">{githubProfile.following} seguindo</span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-gray-300">{githubProfile.publicRepos} repos</span>
-                </div>
-              </div>
-              {githubProfile.bio && <p className="mt-2 text-sm text-gray-400">{githubProfile.bio}</p>}
-              <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">
-                {githubProfile.company && <span className="inline-flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> {githubProfile.company}</span>}
-                {githubProfile.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {githubProfile.location}</span>}
-                {githubProfile.blog && <a href={githubProfile.blog} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-200"><Link2 className="h-3.5 w-3.5" /> Website</a>}
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-xs font-mono uppercase tracking-[0.2em] text-gray-500">Meus Repositórios</p>
-              <h2 className="text-lg font-bold text-white mt-1">Sincronizados do GitHub</h2>
-            </div>
+      <section className="glass rounded-3xl p-5 sm:p-7 mb-6 sm:mb-7 animate-fade-up">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-mono uppercase tracking-[0.25em] text-cyan-300">GitHub Dashboard</p>
+            <h1 className="mt-2 text-3xl sm:text-4xl font-bold leading-tight text-white">Comunidade e Repositórios</h1>
+            <p className="mt-3 max-w-3xl text-sm text-gray-300">
+              Perfil, métricas, top repositórios, atividade recente, saúde e segurança com dados reais do GitHub.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => syncReposMutation.mutate()}
-              disabled={syncReposMutation.isPending}
-              className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-all disabled:opacity-50"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              className="h-btn-primary"
             >
-              <Repeat2 className={`h-4 w-4 ${syncReposMutation.isPending ? 'animate-spin' : ''}`} />
-              Sincronizar
+              <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+              Sincronizar agora
             </button>
+            <a href={data?.quickActions.githubProfileUrl} target="_blank" rel="noreferrer" className="h-btn">
+              Abrir no GitHub <ExternalLink className="h-4 w-4" />
+            </a>
           </div>
+        </div>
+      </section>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {reposQuery.isLoading && <p className="text-sm text-gray-500 p-4">Carregando seus repositórios...</p>}
-            {!reposQuery.isLoading && githubRepos.length === 0 && (
-              <p className="text-sm text-gray-500 p-4">Nenhum repositório encontrado ou sincronizado ainda.</p>
-            )}
-            {githubRepos.slice(0, 6).map((repo: GithubRepository) => (
-              <a
-                key={repo.id}
-                href={repo.htmlUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="group flex flex-col justify-between glass rounded-2xl p-4 transition-all hover:border-cyan-400/20 hover:bg-white/5"
-              >
-                <div>
-                  <div className="flex items-center gap-2 mb-2 text-cyan-400">
-                    <FolderGit2 className="h-4 w-4" />
-                    <span className="font-semibold truncate text-sm">{repo.name}</span>
+      {dashboardQuery.isLoading && <div className="text-sm text-gray-400">Carregando dados do GitHub...</div>}
+      {dashboardQuery.isError && <div className="text-sm text-rose-300">Falha ao carregar dashboard GitHub.</div>}
+
+      {data && (
+        <>
+          <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard label="Repos Públicos" value={data.profile.publicRepos} sub={`cache: ${data.sync.cachedRepos}`} />
+            <MetricCard label="Followers" value={data.profile.followers} sub={`Following: ${data.profile.following}`} />
+            <MetricCard label="Último Sync" value={data.sync.lastSyncedAt ? new Date(data.sync.lastSyncedAt).toLocaleString('pt-BR') : 'N/A'} />
+            <MetricCard label="Status Token" value={data.tokenStatus === 'ok' ? 'OK' : 'Expirado'} sub={data.tokenStatus === 'ok' ? 'Operacional' : 'Reautenticar'} />
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="space-y-6">
+              <div className="glass rounded-2xl p-5">
+                <div className="flex items-start gap-4">
+                  <img src={data.profile.avatarUrl} alt={data.profile.login} className="h-14 w-14 rounded-full border border-white/10 object-cover" />
+                  <div className="min-w-0">
+                    <p className="text-lg font-semibold text-white truncate">{data.profile.name || data.profile.login}</p>
+                    <a href={data.profile.htmlUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-cyan-300 hover:text-cyan-200">
+                      @{data.profile.login} <ExternalLink className="h-3 w-3" />
+                    </a>
+                    {data.profile.bio ? <p className="mt-2 text-sm text-gray-300">{data.profile.bio}</p> : null}
+                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-400">
+                      {data.profile.company ? <span className="inline-flex items-center gap-1"><Building2 className="h-3.5 w-3.5" />{data.profile.company}</span> : null}
+                      {data.profile.location ? <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{data.profile.location}</span> : null}
+                      {data.profile.blog ? <a href={data.profile.blog} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-300"><Link2 className="h-3.5 w-3.5" />Website</a> : null}
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-400 line-clamp-2 mt-1">
-                    {repo.description || 'Sem descrição.'}
-                  </p>
                 </div>
-                <div className="mt-4 flex items-center gap-4 text-xs text-gray-500">
-                  {repo.language && (
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-cyan-500/50 block"></span>
-                      {repo.language}
-                    </span>
+              </div>
+
+              <div className="glass rounded-2xl p-5">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-lg font-semibold text-white">Top Repositórios</h2>
+                  <div className="flex flex-wrap gap-2">
+                    <select className="h-input !py-2 !px-3 !w-auto text-sm" value={scope} onChange={(e) => setScope(e.target.value as GithubRepoScope)}>
+                      <option value="all">todos</option>
+                      <option value="owner">só owner</option>
+                      <option value="org">só org</option>
+                    </select>
+                    <select className="h-input !py-2 !px-3 !w-auto text-sm" value={sortBy} onChange={(e) => setSortBy(e.target.value as GithubRepoSort)}>
+                      <option value="updated">mais atualizados</option>
+                      <option value="stars">mais stars</option>
+                      <option value="forks">mais forks</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2.5">
+                  {data.topRepositories.map((repo) => (
+                    <a key={repo.id} href={repo.htmlUrl} target="_blank" rel="noreferrer" className="block rounded-xl border border-white/10 bg-white/3 p-3 hover:border-cyan-400/30 hover:bg-white/5 transition-all">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-white truncate">{repo.fullName}</p>
+                        <span className="text-[11px] text-gray-500">{new Date(repo.updatedAt).toLocaleDateString('pt-BR')}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-400 line-clamp-2">{repo.description || 'Sem descrição.'}</p>
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">
+                        <span className="inline-flex items-center gap-1"><Star className="h-3.5 w-3.5" />{repo.stargazers}</span>
+                        <span>{repo.forks} forks</span>
+                        <span>{repo.openIssues} issues</span>
+                        <span>{repo.language || 'N/A'}</span>
+                        <span>{repo.ownerType}</span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+
+              <div className="glass rounded-2xl p-5">
+                <h2 className="text-lg font-semibold text-white">Atividade recente (7 dias)</h2>
+                <div className="mt-3 space-y-2.5">
+                  {data.recentActivity.length === 0 ? <p className="text-sm text-gray-500">Sem atividade recente visível.</p> : null}
+                  {data.recentActivity.map((item, idx) => {
+                    const Icon = activityIcon[item.type]
+                    return (
+                      <a key={`${item.repo}-${item.createdAt}-${idx}`} href={item.url} target="_blank" rel="noreferrer" className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/3 px-3 py-2.5 hover:bg-white/5">
+                        <Icon className="h-4 w-4 mt-0.5 text-cyan-300" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-white truncate">{item.title}</p>
+                          <p className="text-xs text-gray-500">{item.repo} · {new Date(item.createdAt).toLocaleString('pt-BR')}</p>
+                        </div>
+                      </a>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <aside className="space-y-6">
+              <div className="glass rounded-2xl p-5">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-base font-semibold text-white">Saúde dos Repositórios</h2>
+                  <select
+                    className="h-input !py-1.5 !px-2.5 !w-auto text-xs"
+                    value={issuesThreshold}
+                    onChange={(e) => setIssuesThreshold(Number(e.target.value))}
+                  >
+                    <option value={5}>issues &gt; 5</option>
+                    <option value={10}>issues &gt; 10</option>
+                    <option value={20}>issues &gt; 20</option>
+                    <option value={50}>issues &gt; 50</option>
+                  </select>
+                </div>
+                <div className="mt-3 space-y-2 text-sm text-gray-300">
+                  <div className="flex justify-between"><span>Sem descrição</span><span>{data.health.reposWithoutDescription}</span></div>
+                  <div className="flex justify-between"><span>Sem licença</span><span>{data.health.reposWithoutLicense}</span></div>
+                  <div className="flex justify-between"><span>Issues &gt; {data.health.issuesThreshold}</span><span>{data.health.reposWithOpenIssuesAboveThreshold}</span></div>
+                </div>
+                <div className="mt-4">
+                  <p className="text-xs font-mono uppercase tracking-[0.2em] text-gray-500 mb-2">Linguagens</p>
+                  <div className="space-y-1.5">
+                    {data.health.languages.map((lang) => (
+                      <div key={lang.language} className="flex items-center justify-between text-xs text-gray-400">
+                        <span>{lang.language}</span>
+                        <span>{lang.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass rounded-2xl p-5">
+                <h2 className="text-base font-semibold text-white">Segurança básica</h2>
+                <div className="mt-3 space-y-2 text-sm text-gray-300">
+                  <div className="flex items-center justify-between"><span>Branch protection</span><span>{data.security.withBranchProtection}/{data.security.scannedRepos}</span></div>
+                  <div className="flex items-center justify-between"><span>Sem proteção</span><span>{data.security.withoutBranchProtection}</span></div>
+                  <div className="flex items-center justify-between"><span>Dependabot</span><span>{data.security.dependabotAvailable ? String(data.security.reposWithDependabotAlerts ?? 0) : 'N/A'}</span></div>
+                  <div className="flex items-center justify-between"><span>Code scanning</span><span>{data.security.codeScanningAvailable ? String(data.security.reposWithCodeScanningAlerts ?? 0) : 'N/A'}</span></div>
+                </div>
+              </div>
+
+              <div className="glass rounded-2xl p-5">
+                <h2 className="text-base font-semibold text-white">Ações rápidas</h2>
+                <div className="mt-3 grid gap-2">
+                  <a href={data.quickActions.githubProfileUrl} target="_blank" rel="noreferrer" className="h-btn justify-between">Abrir no GitHub <ExternalLink className="h-4 w-4" /></a>
+                  <button onClick={() => syncMutation.mutate()} className="h-btn justify-between">Sincronizar agora <RefreshCw className="h-4 w-4" /></button>
+                  <a href={data.quickActions.openPullRequestsUrl} target="_blank" rel="noreferrer" className="h-btn justify-between">Ir para PRs abertas <GitPullRequest className="h-4 w-4" /></a>
+                  {data.quickActions.createIssueUrl ? (
+                    <a href={data.quickActions.createIssueUrl} target="_blank" rel="noreferrer" className="h-btn justify-between">Criar issue <BookOpen className="h-4 w-4" /></a>
+                  ) : (
+                    <span className="h-btn justify-between opacity-60 cursor-not-allowed">Criar issue <AlertTriangle className="h-4 w-4" /></span>
                   )}
-                  <span className="flex items-center gap-1">
-                    <Heart className="h-3 w-3 text-rose-500/80" /> {repo.stargazers}
-                  </span>
                 </div>
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Main Layout */}
-      <section className="mt-6 social-layout">
-        {/* Left Sidebar */}
-        <aside className="space-y-4 animate-fade-up delay-100">
-          <div className="glass rounded-2xl p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">Comunidades</p>
-            <div className="mt-3 space-y-1.5">
-              {communities.map((community) => (
-                <button
-                  key={community.id}
-                  onClick={() => communityMutation.mutate(community.id)}
-                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm transition-all ${
-                    community.joined
-                      ? 'bg-cyan-400/8 text-cyan-200 border border-cyan-400/15'
-                      : 'bg-white/3 text-gray-300 border border-transparent hover:bg-white/5'
-                  }`}
-                >
-                  <span className="truncate">{community.name}</span>
-                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-gray-400">{community.members}</span>
-                </button>
-              ))}
-              {!communities.length && <div className="text-xs text-gray-600">Sem comunidades.</div>}
-            </div>
-          </div>
-
-          <div className="glass rounded-2xl p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">Atalhos</p>
-            <div className="mt-3 space-y-1.5">
-              <Link href="/repository" className="social-link">Ver repositório</Link>
-              <Link href="/ops" className="social-link">Ver operações</Link>
-            </div>
-          </div>
-        </aside>
-
-        {/* Feed */}
-        <main className="space-y-4 animate-fade-up delay-200">
-          {visiblePosts.map((post) => (
-            <article key={post.id} className="glass rounded-2xl p-5 transition-all hover:border-white/10">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/15 to-green-400/10 border border-white/5">
-                    <FolderGit2 className="h-4.5 w-4.5 text-cyan-400" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">Atualização</p>
-                    <h3 className="mt-0.5 text-base font-semibold text-white">
-                      {post.release.packageName}@{post.release.packageVersion}
-                    </h3>
-                    <p className="mt-1 text-sm text-gray-400">{post.content}</p>
-                    <p className="mt-1 text-xs text-gray-600 font-mono">
-                      {post.release.releaseChannel} · {post.release.deploymentEnv} · {post.release.status}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => bookmarkMutation.mutate(post.id)}
-                  className={`rounded-xl p-2 transition-all ${
-                    post.viewer.bookmarked
-                      ? 'text-green-400 bg-green-400/10'
-                      : 'text-gray-600 hover:bg-white/5 hover:text-gray-300'
-                  }`}
-                >
-                  <Bookmark className="h-4 w-4" />
-                </button>
               </div>
 
-              <div className="mt-4 flex items-center gap-5 text-xs text-gray-500">
-                <button
-                  onClick={() => reactMutation.mutate({ postId: post.id, reactionType: 'like' })}
-                  className={`inline-flex items-center gap-1.5 transition-colors hover:text-rose-400 ${post.viewer.reactionType === 'like' ? 'text-rose-400' : ''}`}
-                >
-                  <Heart className="h-3.5 w-3.5" /> {post.stats.reactions.like}
-                </button>
-                <button
-                  onClick={() => reactMutation.mutate({ postId: post.id, reactionType: 'insight' })}
-                  className={`inline-flex items-center gap-1.5 transition-colors hover:text-cyan-400 ${post.viewer.reactionType === 'insight' ? 'text-cyan-400' : ''}`}
-                >
-                  <Lightbulb className="h-3.5 w-3.5" /> {post.stats.reactions.insight}
-                </button>
-                <button
-                  onClick={() => commentMutation.mutate(post.id)}
-                  className="inline-flex items-center gap-1.5 transition-colors hover:text-white"
-                >
-                  <MessageCircle className="h-3.5 w-3.5" /> {post.stats.comments}
-                </button>
-                <button
-                  onClick={() => repostMutation.mutate(post.id)}
-                  className={`inline-flex items-center gap-1.5 transition-colors hover:text-cyan-400 ${post.viewer.reposted ? 'text-cyan-400' : ''}`}
-                >
-                  <Repeat2 className="h-3.5 w-3.5" /> {post.stats.reposts}
-                </button>
-                <span className="ml-auto text-[11px] text-gray-600">
-                  {new Date(post.createdAt).toLocaleString('pt-BR')}
+              <Link href="/repository" className="flex items-center justify-between rounded-2xl glass-accent px-4 py-3 text-sm text-cyan-200 hover:border-cyan-400/25 transition-all group">
+                <span className="inline-flex items-center gap-2">
+                  <Globe2 className="h-4 w-4" />
+                  Ver Repositório Completo
                 </span>
-              </div>
-            </article>
-          ))}
-        </main>
-
-        {/* Right Sidebar */}
-        <aside className="space-y-4 animate-fade-up delay-300">
-          <Link
-            href="/teams"
-            className="flex items-center justify-between rounded-2xl glass-accent px-4 py-3 text-sm text-cyan-200 hover:border-cyan-400/25 transition-all group"
-          >
-            <span className="inline-flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4" />
-              Gerenciar equipes
-            </span>
-            <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
-          </Link>
-        </aside>
-      </section>
-
-      {/* Quick Links */}
-      <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 animate-fade-up delay-400">
-        {areas.map(({ href, title, icon: Icon }) => (
-          <Link
-            key={`quick-${href}`}
-            href={href}
-            className="group glass rounded-xl px-4 py-3 transition-all hover:border-cyan-400/15 hover:scale-[1.01]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-400/8 border border-cyan-400/10 group-hover:bg-cyan-400/12 transition-colors">
-                <Icon className="h-4 w-4 text-cyan-400" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-white">{title}</p>
-                <p className="text-xs text-gray-600">Entrar</p>
-              </div>
-            </div>
-          </Link>
-        ))}
-      </section>
+                <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            </aside>
+          </section>
+        </>
+      )}
     </div>
   )
 }
