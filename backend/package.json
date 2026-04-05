@@ -31,7 +31,7 @@
     "axios": "^1.14.0",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.49.1",
-    "dotenv": "^16.5.0",
+    "dotenv": "^17.4.0",
     "helmet": "^8.1.0",
     "ioredis": "^5.4.1",
     "nestjs-pino": "^4.4.1",
