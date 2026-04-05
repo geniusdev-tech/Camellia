@@ -33,6 +33,11 @@ export class AuthController {
     };
   }
 
+  private oauthCookieClearOptions(req: Request) {
+    const { httpOnly, secure, sameSite, path } = this.oauthCookieOptions(req);
+    return { httpOnly, secure, sameSite, path };
+  }
+
   @Post('login')
   @UsePipes(new ZodValidationPipe(loginSchema))
   async login(@Body() body: LoginInput) {
@@ -58,22 +63,23 @@ export class AuthController {
   async githubAuthCallback(@Req() req: Request, @Res() res: Response) {
     const frontendUrl = process.env.ALLOWED_ORIGIN?.split(',')[0]?.trim() || 'http://localhost:3000';
     const cookieOptions = this.oauthCookieOptions(req);
+    const clearOptions = this.oauthCookieClearOptions(req);
 
     try {
       const { accessToken } = await this.authService.githubLogin(req.user);
       res.cookie('gatestack_oauth_token', accessToken, cookieOptions);
       res.redirect(`${frontendUrl}/login?oauth=success`);
     } catch {
-      res.clearCookie('gatestack_oauth_token', cookieOptions);
+      res.clearCookie('gatestack_oauth_token', clearOptions);
       res.redirect(`${frontendUrl}/login?error=github_oauth_failed`);
     }
   }
 
   @Get('github/session')
   async githubSession(@Req() req: Request, @Res() res: Response) {
-    const cookieOptions = this.oauthCookieOptions(req);
+    const clearOptions = this.oauthCookieClearOptions(req);
     const token = this.readCookie(req.headers.cookie, 'gatestack_oauth_token');
-    res.clearCookie('gatestack_oauth_token', cookieOptions);
+    res.clearCookie('gatestack_oauth_token', clearOptions);
     if (!token) {
       return res.status(401).json({ success: false, message: 'GitHub session not found' });
     }
