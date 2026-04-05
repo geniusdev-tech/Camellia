@@ -5,6 +5,7 @@ import type {
   CreateReleaseRequest,
   CreateReleaseResponse,
   DownloadResponse,
+  GithubProfileResponse,
   GithubReposResponse,
   LoginMFARequest,
   LoginRequest,
@@ -509,6 +510,9 @@ export const socialAPI = {
 }
 
 export const githubAPI = {
+  profile: () =>
+    fetchAPI<GithubProfileResponse>('/api/github/profile'),
+
   repos: () =>
     fetchAPI<GithubReposResponse>('/api/github/repos'),
   

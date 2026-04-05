@@ -370,3 +370,22 @@ export interface GithubReposResponse extends ApiResponse {
   count: number
   repos: GithubRepository[]
 }
+
+export interface GithubProfile {
+  githubId: number
+  login: string
+  name?: string | null
+  avatarUrl: string
+  bio?: string | null
+  company?: string | null
+  location?: string | null
+  blog?: string | null
+  htmlUrl: string
+  followers: number
+  following: number
+  publicRepos: number
+}
+
+export interface GithubProfileResponse extends ApiResponse {
+  profile: GithubProfile
+}

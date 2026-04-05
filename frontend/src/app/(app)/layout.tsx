@@ -3,13 +3,14 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useQuery } from '@tanstack/react-query'
 import {
   FolderKanban, LayoutDashboard, Settings, LogOut,
   Menu, ChevronRight, Bell, HelpCircle,
   FolderGit2, Users, ActivitySquare, Globe2, X,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { authAPI } from '@/lib/api'
+import { authAPI, githubAPI } from '@/lib/api'
 import { TauriStatus } from '@/components/TauriStatus'
 import { canManageOwnerActions } from '@/lib/ui'
 
@@ -27,6 +28,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname  = usePathname()
   const { user, isAuthenticated, logout } = useAuthStore()
   const [open, setOpen] = useState(false)
+  const githubLinked = Boolean(user?.github_id || user?.githubId)
+
+  const githubProfileQuery = useQuery({
+    queryKey: ['github', 'profile'],
+    queryFn: githubAPI.profile,
+    enabled: githubLinked,
+    staleTime: 60_000,
+  })
+  const githubProfile = githubProfileQuery.data?.profile
 
   useEffect(() => {
     if (!isAuthenticated) router.replace('/login')
@@ -99,12 +109,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-white truncate">{user.name || user.email}</p>
+              <p className="text-xs font-medium text-white truncate">{githubProfile?.name || user.name || user.email}</p>
               <p className="font-mono text-[10px] text-gray-500">
-                {user.role || 'user'} · {user.has_2fa ? '2FA ✓' : '2FA ✗'}
+                {githubProfile?.login ? `@${githubProfile.login} · ` : ''}{user.role || 'user'} · {user.has_2fa ? '2FA ✓' : '2FA ✗'}
               </p>
             </div>
           </div>
+          {githubProfile && (
+            <div className="mb-2 rounded-xl border border-cyan-400/15 bg-cyan-400/5 px-3 py-2">
+              <p className="text-[10px] font-mono text-cyan-300 uppercase tracking-[0.2em]">GitHub</p>
+              <p className="mt-1 text-xs text-gray-300">
+                {githubProfile.followers} seguidores · {githubProfile.publicRepos} repos públicos
+              </p>
+            </div>
+          )}
           <div className="mb-2">
             <span className="online-chip">
               <span className="online-dot" />

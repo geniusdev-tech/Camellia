@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Flame, Library, Repeat2, Sparkles, Users } from 'lucide-react'
+import { ExternalLink, Flame, Library, Repeat2, Sparkles, Users } from 'lucide-react'
 import { ReleaseControlCenter } from '@/components/features/ReleaseControlCenter'
 import { githubAPI } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
@@ -18,6 +18,12 @@ export default function RepositoryPage() {
     enabled: githubLinked,
     staleTime: 60_000,
   })
+  const profileQuery = useQuery({
+    queryKey: ['github', 'profile'],
+    queryFn: githubAPI.profile,
+    enabled: githubLinked,
+    staleTime: 60_000,
+  })
 
   const syncReposMutation = useMutation({
     mutationFn: githubAPI.sync,
@@ -27,6 +33,7 @@ export default function RepositoryPage() {
   })
 
   const githubRepos = reposQuery.data?.repos ?? []
+  const githubProfile = profileQuery.data?.profile
 
   return (
     <div className="social-page">
@@ -84,6 +91,22 @@ export default function RepositoryPage() {
 
             {githubLinked && reposQuery.isLoading && (
               <p className="mt-3 text-sm text-gray-500">Carregando repositórios do GitHub...</p>
+            )}
+
+            {githubProfile && (
+              <div className="mt-3 rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3">
+                <div className="flex items-center gap-3">
+                  <img src={githubProfile.avatarUrl} alt={githubProfile.login} className="h-10 w-10 rounded-full border border-white/10 object-cover" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{githubProfile.name || githubProfile.login}</p>
+                    <a href={githubProfile.htmlUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:text-cyan-200">
+                      @{githubProfile.login} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <p className="ml-auto text-xs text-gray-400">{githubProfile.followers} seguidores · {githubProfile.publicRepos} repos</p>
+                </div>
+                {githubProfile.bio && <p className="mt-2 text-xs text-gray-400">{githubProfile.bio}</p>}
+              </div>
             )}
 
             {githubLinked && !reposQuery.isLoading && githubRepos.length === 0 && (

@@ -7,6 +7,12 @@ import { GithubService } from './github.service';
 export class GithubController {
   constructor(private readonly githubService: GithubService) {}
 
+  @Get('profile')
+  async getProfile(@Req() req: any) {
+    const profile = await this.githubService.getUserProfile(req.user.sub);
+    return { success: true, profile };
+  }
+
   @Get('repos')
   async getRepos(@Req() req: any) {
     const repos = await this.githubService.getUserRepositories(req.user.sub);

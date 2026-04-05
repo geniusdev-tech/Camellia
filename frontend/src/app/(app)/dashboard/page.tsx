@@ -6,12 +6,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ActivitySquare,
   ArrowRight,
+  Building2,
   Bookmark,
+  ExternalLink,
   Flame,
   FolderGit2,
   Globe2,
   Heart,
+  Link2,
   Lightbulb,
+  MapPin,
   MessageCircle,
   Repeat2,
   ShieldCheck,
@@ -49,6 +53,12 @@ export default function DashboardPage() {
   const reposQuery = useQuery({
     queryKey: ['github', 'repos'],
     queryFn: githubAPI.repos,
+    enabled: !!user?.github_id || !!user?.githubId,
+    staleTime: 60_000,
+  })
+  const profileQuery = useQuery({
+    queryKey: ['github', 'profile'],
+    queryFn: githubAPI.profile,
     enabled: !!user?.github_id || !!user?.githubId,
     staleTime: 60_000,
   })
@@ -96,6 +106,7 @@ export default function DashboardPage() {
   const trends = sidebarQuery.data?.trends ?? []
   const suggestedUsers = sidebarQuery.data?.suggestedUsers ?? []
   const githubRepos = reposQuery.data?.repos ?? []
+  const githubProfile = profileQuery.data?.profile
 
   const fallbackPosts = useMemo<SocialFeedPost[]>(
     () =>
@@ -147,6 +158,36 @@ export default function DashboardPage() {
       {/* GitHub Repositories (Only if linked) */}
       {(user?.github_id || user?.githubId) && (
         <section className="mt-6 mb-6 animate-fade-up">
+          {githubProfile && (
+            <div className="mb-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <img src={githubProfile.avatarUrl} alt={githubProfile.login} className="h-12 w-12 rounded-full border border-white/10 object-cover" />
+                <div className="min-w-0">
+                  <p className="text-white font-semibold truncate">{githubProfile.name || githubProfile.login}</p>
+                  <a
+                    href={githubProfile.htmlUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:text-cyan-200"
+                  >
+                    @{githubProfile.login} <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+                <div className="ml-auto flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-gray-300">{githubProfile.followers} seguidores</span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-gray-300">{githubProfile.following} seguindo</span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-gray-300">{githubProfile.publicRepos} repos</span>
+                </div>
+              </div>
+              {githubProfile.bio && <p className="mt-2 text-sm text-gray-400">{githubProfile.bio}</p>}
+              <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">
+                {githubProfile.company && <span className="inline-flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> {githubProfile.company}</span>}
+                {githubProfile.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {githubProfile.location}</span>}
+                {githubProfile.blog && <a href={githubProfile.blog} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-200"><Link2 className="h-3.5 w-3.5" /> Website</a>}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-xs font-mono uppercase tracking-[0.2em] text-gray-500">Meus Repositórios</p>

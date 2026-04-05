@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Eye, EyeOff, AlertCircle, Loader2, Shield, ArrowLeft, Github } from 'lucide-react'
-import { authAPI } from '@/lib/api'
+import { authAPI, githubAPI } from '@/lib/api'
 import { getApiBase } from '@/lib/tauri'
 import { useAuthStore } from '@/store/auth'
 
@@ -57,6 +57,8 @@ function LoginForm() {
               },
               accessToken,
             )
+            // Best-effort sync so repositories are available immediately after OAuth login.
+            void githubAPI.sync().catch(() => undefined)
             router.replace('/dashboard')
             return
           }

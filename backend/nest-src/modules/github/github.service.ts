@@ -11,12 +11,56 @@ export class GithubService {
 
   constructor(private prisma: PrismaService) {}
 
-  async syncUserRepositories(userId: string) {
+  private async resolveGithubAccessToken(userId: string): Promise<string> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.githubToken) {
       throw new UnauthorizedException('User has not linked a GitHub account or token is missing');
     }
-    const decryptedToken = openSecret(user.githubToken, this.env.JWT_SECRET) || user.githubToken;
+    return openSecret(user.githubToken, this.env.JWT_SECRET) || user.githubToken;
+  }
+
+  async getUserProfile(userId: string) {
+    const decryptedToken = await this.resolveGithubAccessToken(userId);
+
+    try {
+      const response = await axios.get('https://api.github.com/user', {
+        headers: {
+          Authorization: `Bearer ${decryptedToken}`,
+          Accept: 'application/vnd.github.v3+json',
+        },
+      });
+
+      const data = response.data;
+      return {
+        githubId: data.id,
+        login: data.login,
+        name: data.name,
+        avatarUrl: data.avatar_url,
+        bio: data.bio,
+        company: data.company,
+        location: data.location,
+        blog: data.blog,
+        htmlUrl: data.html_url,
+        followers: data.followers,
+        following: data.following,
+        publicRepos: data.public_repos,
+      };
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      this.logger.error(`Failed to fetch GitHub profile for user ${userId}. status=${status ?? 'unknown'}`);
+      if (status === 401 || status === 403) {
+        throw new ForbiddenException('GitHub token inválido ou sem permissão para consultar perfil');
+      }
+      throw new Error('Falha ao buscar perfil do GitHub');
+    }
+  }
+
+  async syncUserRepositories(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    const decryptedToken = await this.resolveGithubAccessToken(userId);
 
     try {
       const response = await axios.get('https://api.github.com/user/repos?visibility=public&sort=updated&per_page=30', {
