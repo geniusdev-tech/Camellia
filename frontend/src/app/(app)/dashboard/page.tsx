@@ -12,15 +12,11 @@ import {
   GitCommitHorizontal,
   GitPullRequest,
   Globe2,
-  Heart,
   Link2,
   MapPin,
   MessageSquare,
   RefreshCw,
-  ShieldCheck,
-  ShieldX,
   Star,
-  Users,
 } from 'lucide-react'
 import { githubAPI } from '@/lib/api'
 import type { GithubRepoScope, GithubRepoSort } from '@/lib/types'
@@ -49,6 +45,21 @@ export default function DashboardPage() {
     queryFn: () => githubAPI.dashboard({ scope, sortBy, issuesThreshold }),
     enabled: githubLinked,
     staleTime: 45_000,
+    retry: 1,
+  })
+
+  const profileFallbackQuery = useQuery({
+    queryKey: ['github', 'profile', 'fallback'],
+    queryFn: githubAPI.profile,
+    enabled: githubLinked,
+    staleTime: 60_000,
+  })
+
+  const reposFallbackQuery = useQuery({
+    queryKey: ['github', 'repos', 'fallback'],
+    queryFn: githubAPI.repos,
+    enabled: githubLinked,
+    staleTime: 60_000,
   })
 
   const syncMutation = useMutation({
@@ -61,6 +72,25 @@ export default function DashboardPage() {
   })
 
   const data = dashboardQuery.data
+  const fallbackProfile = profileFallbackQuery.data?.profile
+  const fallbackRepos = reposFallbackQuery.data?.repos ?? []
+  const profile = data?.profile ?? fallbackProfile
+  const topRepositories = data?.topRepositories ?? fallbackRepos.map((repo) => ({
+    id: repo.githubId,
+    name: repo.name,
+    fullName: repo.fullName,
+    description: repo.description,
+    htmlUrl: repo.htmlUrl,
+    language: repo.language,
+    stargazers: repo.stargazers,
+    forks: repo.forks,
+    updatedAt: repo.dbUpdatedAt,
+    openIssues: 0,
+    ownerLogin: profile?.login || '',
+    ownerType: 'User',
+    defaultBranch: null,
+    license: null,
+  }))
   const activityIcon = useMemo(() => ({
     commit: GitCommitHorizontal,
     pull_request: GitPullRequest,
@@ -110,32 +140,38 @@ export default function DashboardPage() {
       </section>
 
       {dashboardQuery.isLoading && <div className="text-sm text-gray-400">Carregando dados do GitHub...</div>}
-      {dashboardQuery.isError && <div className="text-sm text-rose-300">Falha ao carregar dashboard GitHub.</div>}
+      {dashboardQuery.isError && (
+        <div className="mb-4 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+          Dashboard avançado indisponível no backend atual. Exibindo dados básicos de perfil e repositórios.
+        </div>
+      )}
 
-      {data && (
+      {(data || fallbackProfile || fallbackRepos.length > 0) && (
         <>
           <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard label="Repos Públicos" value={data.profile.publicRepos} sub={`cache: ${data.sync.cachedRepos}`} />
-            <MetricCard label="Followers" value={data.profile.followers} sub={`Following: ${data.profile.following}`} />
-            <MetricCard label="Último Sync" value={data.sync.lastSyncedAt ? new Date(data.sync.lastSyncedAt).toLocaleString('pt-BR') : 'N/A'} />
-            <MetricCard label="Status Token" value={data.tokenStatus === 'ok' ? 'OK' : 'Expirado'} sub={data.tokenStatus === 'ok' ? 'Operacional' : 'Reautenticar'} />
+            <MetricCard label="Repos Públicos" value={profile?.publicRepos ?? fallbackRepos.length} sub={`cache: ${data?.sync.cachedRepos ?? fallbackRepos.length}`} />
+            <MetricCard label="Followers" value={profile?.followers ?? 'N/A'} sub={`Following: ${profile?.following ?? 'N/A'}`} />
+            <MetricCard label="Último Sync" value={data?.sync.lastSyncedAt ? new Date(data.sync.lastSyncedAt).toLocaleString('pt-BR') : (fallbackRepos[0] ? new Date(fallbackRepos[0].dbUpdatedAt).toLocaleString('pt-BR') : 'N/A')} />
+            <MetricCard label="Status Token" value={data?.tokenStatus === 'expired' ? 'Expirado' : 'OK'} sub={data?.tokenStatus === 'expired' ? 'Reautenticar' : 'Operacional'} />
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-6">
               <div className="glass rounded-2xl p-5">
                 <div className="flex items-start gap-4">
-                  <img src={data.profile.avatarUrl} alt={data.profile.login} className="h-14 w-14 rounded-full border border-white/10 object-cover" />
+                  <img src={profile?.avatarUrl || user?.avatarUrl || ''} alt={profile?.login || user?.email || 'github'} className="h-14 w-14 rounded-full border border-white/10 object-cover" />
                   <div className="min-w-0">
-                    <p className="text-lg font-semibold text-white truncate">{data.profile.name || data.profile.login}</p>
-                    <a href={data.profile.htmlUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-cyan-300 hover:text-cyan-200">
-                      @{data.profile.login} <ExternalLink className="h-3 w-3" />
-                    </a>
-                    {data.profile.bio ? <p className="mt-2 text-sm text-gray-300">{data.profile.bio}</p> : null}
+                    <p className="text-lg font-semibold text-white truncate">{profile?.name || profile?.login || user?.name || user?.email}</p>
+                    {profile?.htmlUrl ? (
+                      <a href={profile.htmlUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-cyan-300 hover:text-cyan-200">
+                        @{profile.login} <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
+                    {profile?.bio ? <p className="mt-2 text-sm text-gray-300">{profile.bio}</p> : null}
                     <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-400">
-                      {data.profile.company ? <span className="inline-flex items-center gap-1"><Building2 className="h-3.5 w-3.5" />{data.profile.company}</span> : null}
-                      {data.profile.location ? <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{data.profile.location}</span> : null}
-                      {data.profile.blog ? <a href={data.profile.blog} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-300"><Link2 className="h-3.5 w-3.5" />Website</a> : null}
+                      {profile?.company ? <span className="inline-flex items-center gap-1"><Building2 className="h-3.5 w-3.5" />{profile.company}</span> : null}
+                      {profile?.location ? <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{profile.location}</span> : null}
+                      {profile?.blog ? <a href={profile.blog} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-300"><Link2 className="h-3.5 w-3.5" />Website</a> : null}
                     </div>
                   </div>
                 </div>
@@ -158,7 +194,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="space-y-2.5">
-                  {data.topRepositories.map((repo) => (
+                  {topRepositories.map((repo) => (
                     <a key={repo.id} href={repo.htmlUrl} target="_blank" rel="noreferrer" className="block rounded-xl border border-white/10 bg-white/3 p-3 hover:border-cyan-400/30 hover:bg-white/5 transition-all">
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-sm font-semibold text-white truncate">{repo.fullName}</p>
@@ -177,6 +213,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
+              {data && (
               <div className="glass rounded-2xl p-5">
                 <h2 className="text-lg font-semibold text-white">Atividade recente (7 dias)</h2>
                 <div className="mt-3 space-y-2.5">
@@ -195,9 +232,11 @@ export default function DashboardPage() {
                   })}
                 </div>
               </div>
+              )}
             </div>
 
             <aside className="space-y-6">
+              {data && (
               <div className="glass rounded-2xl p-5">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="text-base font-semibold text-white">Saúde dos Repositórios</h2>
@@ -229,7 +268,9 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+              )}
 
+              {data && (
               <div className="glass rounded-2xl p-5">
                 <h2 className="text-base font-semibold text-white">Segurança básica</h2>
                 <div className="mt-3 space-y-2 text-sm text-gray-300">
@@ -239,14 +280,17 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between"><span>Code scanning</span><span>{data.security.codeScanningAvailable ? String(data.security.reposWithCodeScanningAlerts ?? 0) : 'N/A'}</span></div>
                 </div>
               </div>
+              )}
 
               <div className="glass rounded-2xl p-5">
                 <h2 className="text-base font-semibold text-white">Ações rápidas</h2>
                 <div className="mt-3 grid gap-2">
-                  <a href={data.quickActions.githubProfileUrl} target="_blank" rel="noreferrer" className="h-btn justify-between">Abrir no GitHub <ExternalLink className="h-4 w-4" /></a>
+                  <a href={data?.quickActions.githubProfileUrl || profile?.htmlUrl || '#'} target="_blank" rel="noreferrer" className="h-btn justify-between">Abrir no GitHub <ExternalLink className="h-4 w-4" /></a>
                   <button onClick={() => syncMutation.mutate()} className="h-btn justify-between">Sincronizar agora <RefreshCw className="h-4 w-4" /></button>
-                  <a href={data.quickActions.openPullRequestsUrl} target="_blank" rel="noreferrer" className="h-btn justify-between">Ir para PRs abertas <GitPullRequest className="h-4 w-4" /></a>
-                  {data.quickActions.createIssueUrl ? (
+                  {data?.quickActions.openPullRequestsUrl ? (
+                    <a href={data.quickActions.openPullRequestsUrl} target="_blank" rel="noreferrer" className="h-btn justify-between">Ir para PRs abertas <GitPullRequest className="h-4 w-4" /></a>
+                  ) : null}
+                  {data?.quickActions.createIssueUrl ? (
                     <a href={data.quickActions.createIssueUrl} target="_blank" rel="noreferrer" className="h-btn justify-between">Criar issue <BookOpen className="h-4 w-4" /></a>
                   ) : (
                     <span className="h-btn justify-between opacity-60 cursor-not-allowed">Criar issue <AlertTriangle className="h-4 w-4" /></span>

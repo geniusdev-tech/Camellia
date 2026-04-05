@@ -17,12 +17,14 @@ export default function RepositoryPage() {
     queryFn: githubAPI.repos,
     enabled: githubLinked,
     staleTime: 60_000,
+    retry: 1,
   })
   const profileQuery = useQuery({
     queryKey: ['github', 'profile'],
     queryFn: githubAPI.profile,
     enabled: githubLinked,
     staleTime: 60_000,
+    retry: 1,
   })
 
   const syncReposMutation = useMutation({
@@ -34,6 +36,8 @@ export default function RepositoryPage() {
 
   const githubRepos = reposQuery.data?.repos ?? []
   const githubProfile = profileQuery.data?.profile
+  const fallbackName = user?.name || user?.email || 'Usuário'
+  const fallbackLogin = (user?.email || '').split('@')[0] || 'github-user'
 
   return (
     <div className="social-page">
@@ -92,20 +96,40 @@ export default function RepositoryPage() {
             {githubLinked && reposQuery.isLoading && (
               <p className="mt-3 text-sm text-gray-500">Carregando repositórios do GitHub...</p>
             )}
+            {githubLinked && reposQuery.isError && (
+              <p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+                Não foi possível carregar os repositórios agora. Tente sincronizar novamente.
+              </p>
+            )}
+            {githubLinked && profileQuery.isError && (
+              <p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+                Perfil GitHub indisponível no momento. Exibindo dados básicos da conta.
+              </p>
+            )}
 
-            {githubProfile && (
+            {(githubProfile || githubLinked) && (
               <div className="mt-3 rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3">
                 <div className="flex items-center gap-3">
-                  <img src={githubProfile.avatarUrl} alt={githubProfile.login} className="h-10 w-10 rounded-full border border-white/10 object-cover" />
+                  <img
+                    src={githubProfile?.avatarUrl || user?.avatarUrl || ''}
+                    alt={githubProfile?.login || fallbackLogin}
+                    className="h-10 w-10 rounded-full border border-white/10 object-cover"
+                  />
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{githubProfile.name || githubProfile.login}</p>
-                    <a href={githubProfile.htmlUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:text-cyan-200">
-                      @{githubProfile.login} <ExternalLink className="h-3 w-3" />
-                    </a>
+                    <p className="text-sm font-semibold text-white truncate">{githubProfile?.name || fallbackName}</p>
+                    {githubProfile?.htmlUrl ? (
+                      <a href={githubProfile.htmlUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:text-cyan-200">
+                        @{githubProfile.login} <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : (
+                      <p className="text-xs text-gray-500">@{fallbackLogin}</p>
+                    )}
                   </div>
-                  <p className="ml-auto text-xs text-gray-400">{githubProfile.followers} seguidores · {githubProfile.publicRepos} repos</p>
+                  <p className="ml-auto text-xs text-gray-400">
+                    {githubProfile ? `${githubProfile.followers} seguidores · ${githubProfile.publicRepos} repos` : `${githubRepos.length} repos em cache`}
+                  </p>
                 </div>
-                {githubProfile.bio && <p className="mt-2 text-xs text-gray-400">{githubProfile.bio}</p>}
+                {githubProfile?.bio && <p className="mt-2 text-xs text-gray-400">{githubProfile.bio}</p>}
               </div>
             )}
 

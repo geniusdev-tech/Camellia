@@ -35,6 +35,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     queryFn: githubAPI.profile,
     enabled: githubLinked,
     staleTime: 60_000,
+    retry: 1,
   })
   const githubProfile = githubProfileQuery.data?.profile
 
@@ -121,6 +122,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <p className="mt-1 text-xs text-gray-300">
                 {githubProfile.followers} seguidores · {githubProfile.publicRepos} repos públicos
               </p>
+            </div>
+          )}
+          {githubLinked && githubProfileQuery.isError && (
+            <div className="mb-2 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2">
+              <p className="text-[10px] text-amber-200">Perfil GitHub temporariamente indisponível.</p>
             </div>
           )}
           <div className="mb-2">
