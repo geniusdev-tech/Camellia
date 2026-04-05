@@ -1,26 +1,26 @@
 import type { Metadata } from 'next'
-import { Orbitron, Rajdhani, Share_Tech_Mono } from 'next/font/google'
+import { IBM_Plex_Mono, Manrope, Space_Grotesk } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/components/providers'
 import { NetworkGridWrapper } from '@/components/ui/NetworkGridWrapper'
 
-const fontSans = Rajdhani({
+const fontSans = Manrope({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['400', '500', '600', '700', '800'],
   variable: '--font-geist-sans',
   display: 'swap',
 })
 
-const fontMono = Share_Tech_Mono({
+const fontMono = IBM_Plex_Mono({
   subsets: ['latin'],
-  weight: ['400'],
+  weight: ['400', '500'],
   variable: '--font-geist-mono',
   display: 'swap',
 })
 
-const fontDisplay = Orbitron({
+const fontDisplay = Space_Grotesk({
   subsets: ['latin'],
-  weight: ['500', '600', '700', '800'],
+  weight: ['500', '600', '700'],
   variable: '--font-display',
   display: 'swap',
 })

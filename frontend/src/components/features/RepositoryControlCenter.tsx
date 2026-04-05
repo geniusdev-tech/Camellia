@@ -29,6 +29,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 type FeedbackState = { tone: 'success' | 'error' | 'info'; message: string } | null
 
 export function RepositoryControlCenter({ currentProjectId }: { currentProjectId?: string } = {}) {
+  const showAdvancedModals = false
   const qc = useQueryClient()
   const router = useRouter()
   const pathname = usePathname()
@@ -351,29 +352,38 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
                     <ArrowDownToLine className="h-4 w-4" />
                     Download
                   </button>
-                  <button
-                    onClick={() => setDeleteModalOpen(true)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-2 text-sm font-medium text-rose-200"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Remover
-                  </button>
+                  {showAdvancedModals ? (
+                    <button
+                      onClick={() => {
+                        if (!detail) return
+                        if (typeof window !== 'undefined' && window.confirm('Remover este projeto permanentemente?')) {
+                          deleteMutation.mutate(detail.id)
+                        }
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-2 text-sm font-medium text-rose-200"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remover
+                    </button>
+                  ) : null}
                 </div>
 
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  <button
-                    onClick={() => setMetadataModalOpen(true)}
-                    className="h-btn"
-                  >
-                    Editar metadata
-                  </button>
-                  <button
-                    onClick={() => setShareModalOpen(true)}
-                    className="h-btn"
-                  >
-                    Configurar grants
-                  </button>
-                </div>
+                {showAdvancedModals ? (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <button
+                      onClick={() => setMetadataModalOpen(true)}
+                      className="h-btn"
+                    >
+                      Editar metadata
+                    </button>
+                    <button
+                      onClick={() => setShareModalOpen(true)}
+                      className="h-btn"
+                    >
+                      Configurar grants
+                    </button>
+                  </div>
+                ) : null}
 
                 <div className="mt-4 grid gap-2 sm:grid-cols-3">
                   {['private', 'public', 'shared'].map((visibility) => (
@@ -388,35 +398,46 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
                   ))}
                 </div>
 
-                <div className="mt-4">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white">
-                    <Workflow className="h-4 w-4 text-accent" />
-                    Workflow
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {visibleTargets.map((status) => (
+                {showAdvancedModals ? (
+                  <div className="mt-4">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white">
+                      <Workflow className="h-4 w-4 text-accent" />
+                      Workflow
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {visibleTargets.map((status) => (
+                        <button
+                          key={status}
+                          onClick={() => {
+                            setPendingStatus(status)
+                            setStatusReason(detail.status_reason || '')
+                            setStatusModalOpen(true)
+                          }}
+                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300"
+                        >
+                          {status}
+                        </button>
+                      ))}
+                    </div>
+                    {isOwner ? (
                       <button
-                        key={status}
-                        onClick={() => {
-                          setPendingStatus(status)
-                          setStatusReason(detail.status_reason || '')
-                          setStatusModalOpen(true)
-                        }}
-                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300"
+                        onClick={() => enqueuePublishMutation.mutate(detail.id)}
+                        className="mt-3 inline-flex items-center gap-2 rounded-xl bg-primary-600/20 px-4 py-2 text-sm text-primary-200"
                       >
-                        {status}
+                        Publish async
                       </button>
-                    ))}
+                    ) : null}
                   </div>
-                  {isOwner ? (
+                ) : isOwner ? (
+                  <div className="mt-4">
                     <button
                       onClick={() => enqueuePublishMutation.mutate(detail.id)}
-                      className="mt-3 inline-flex items-center gap-2 rounded-xl bg-primary-600/20 px-4 py-2 text-sm text-primary-200"
+                      className="inline-flex items-center gap-2 rounded-xl bg-primary-600/20 px-4 py-2 text-sm text-primary-200"
                     >
                       Publish async
                     </button>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
 
                 <div className="mt-4">
                   <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white">
@@ -481,7 +502,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
       </section>
 
       <Modal
-        open={statusModalOpen}
+        open={showAdvancedModals && statusModalOpen}
         title={`Alterar status para ${pendingStatus}`}
         onClose={() => setStatusModalOpen(false)}
         footer={(
@@ -514,7 +535,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
       </Modal>
 
       <Modal
-        open={metadataModalOpen}
+        open={showAdvancedModals && metadataModalOpen}
         title="Editar metadata"
         onClose={() => setMetadataModalOpen(false)}
         footer={(
@@ -575,7 +596,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
       </Modal>
 
       <Modal
-        open={shareModalOpen}
+        open={showAdvancedModals && shareModalOpen}
         title="Grants por usuário"
         onClose={() => setShareModalOpen(false)}
         footer={(
@@ -649,7 +670,7 @@ export function RepositoryControlCenter({ currentProjectId }: { currentProjectId
       </Modal>
 
       <Modal
-        open={deleteModalOpen}
+        open={showAdvancedModals && deleteModalOpen}
         title="Remover projeto"
         onClose={() => setDeleteModalOpen(false)}
         footer={(

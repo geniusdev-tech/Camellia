@@ -9,7 +9,6 @@ import {
   Building2,
   Bookmark,
   ExternalLink,
-  Flame,
   FolderGit2,
   Globe2,
   Heart,
@@ -19,7 +18,6 @@ import {
   MessageCircle,
   Repeat2,
   ShieldCheck,
-  UserPlus,
   Users,
 } from 'lucide-react'
 import { StatsBar } from '@/components/features/StatsBar'
@@ -103,8 +101,6 @@ export default function DashboardPage() {
 
   const posts = feedQuery.data?.posts ?? []
   const communities = sidebarQuery.data?.communities ?? []
-  const trends = sidebarQuery.data?.trends ?? []
-  const suggestedUsers = sidebarQuery.data?.suggestedUsers ?? []
   const githubRepos = reposQuery.data?.repos ?? []
   const githubProfile = profileQuery.data?.profile
 
@@ -343,40 +339,6 @@ export default function DashboardPage() {
 
         {/* Right Sidebar */}
         <aside className="space-y-4 animate-fade-up delay-300">
-          <div className="glass rounded-2xl p-4">
-            <div className="flex items-center gap-2">
-              <Flame className="h-4 w-4 text-orange-400" />
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">Tendências</p>
-            </div>
-            <div className="mt-3 space-y-1.5">
-              {trends.map((trend) => (
-                <button key={trend.tag} className="flex w-full items-center justify-between rounded-xl bg-white/3 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-all">
-                  {trend.tag}
-                  <span className="text-xs text-gray-600">{trend.count}</span>
-                </button>
-              ))}
-              {!trends.length && <div className="text-xs text-gray-600">Sem tendências calculadas.</div>}
-            </div>
-          </div>
-
-          <div className="glass rounded-2xl p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">Pessoas sugeridas</p>
-            <div className="mt-3 space-y-2">
-              {suggestedUsers.map((user) => (
-                <div key={user.id} className="flex items-center justify-between rounded-xl bg-white/3 px-3 py-2">
-                  <div>
-                    <p className="text-sm text-white">{user.email}</p>
-                    <p className="text-xs text-gray-600">{user.role}</p>
-                  </div>
-                  <button className="rounded-lg bg-cyan-400/10 border border-cyan-400/15 px-2 py-1 text-cyan-400 hover:bg-cyan-400/15 transition-all">
-                    <UserPlus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-              {!suggestedUsers.length && <div className="text-xs text-gray-600">Sem sugestões no momento.</div>}
-            </div>
-          </div>
-
           <Link
             href="/teams"
             className="flex items-center justify-between rounded-2xl glass-accent px-4 py-3 text-sm text-cyan-200 hover:border-cyan-400/25 transition-all group"

@@ -6,7 +6,6 @@ import { CalendarClock, KeyRound, Share2, Users } from 'lucide-react'
 import { accessAPI, projectsAPI } from '@/lib/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FeedbackBanner } from '@/components/ui/FeedbackBanner'
-import { Modal } from '@/components/ui/Modal'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { useToastStore } from '@/store/toast'
 
@@ -21,7 +20,6 @@ export function TeamsPanel() {
   const [grantProjectId, setGrantProjectId] = useState('')
   const [grantTeamId, setGrantTeamId] = useState('')
   const [feedback, setFeedback] = useState<FeedbackState>(null)
-  const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [inviteForm, setInviteForm] = useState({
     email: '',
     role: 'member',
@@ -54,7 +52,6 @@ export function TeamsPanel() {
       accessAPI.createInvite(teamId, email, role, expiresAt),
     onSuccess: (payload) => {
       setInviteForm({ email: '', role: 'member', expiresAt: '' })
-      setInviteModalOpen(false)
       setFeedback({ tone: 'success', message: `Convite criado. Token: ${payload.invite.token}` })
       pushToast('success', 'Convite criado.')
     },
@@ -170,13 +167,47 @@ export function TeamsPanel() {
             <div className="rounded-2xl border border-white/[0.08] bg-dark-900/50 p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="text-sm font-medium text-white">Convites e grants</div>
-                <button
-                  onClick={() => setInviteModalOpen(true)}
-                  disabled={!selectedTeam}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white disabled:opacity-40"
-                >
+                <span className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300">
                   <Share2 className="h-4 w-4" />
-                  Novo convite
+                  Convite inline
+                </span>
+              </div>
+
+              <div className="mb-4 grid gap-2 rounded-xl border border-white/[0.06] bg-dark-950/40 p-3">
+                <div className="text-xs text-gray-400">Criar convite para o time selecionado</div>
+                <input
+                  value={inviteForm.email}
+                  onChange={(event) => setInviteForm((state) => ({ ...state, email: event.target.value }))}
+                  placeholder="dev@example.com"
+                  className="h-input"
+                />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <select
+                    value={inviteForm.role}
+                    onChange={(event) => setInviteForm((state) => ({ ...state, role: event.target.value }))}
+                    className="h-input"
+                  >
+                    <option value="member">member</option>
+                    <option value="manager">manager</option>
+                  </select>
+                  <input
+                    type="datetime-local"
+                    value={inviteForm.expiresAt}
+                    onChange={(event) => setInviteForm((state) => ({ ...state, expiresAt: event.target.value }))}
+                    className="h-input"
+                  />
+                </div>
+                <button
+                  onClick={() => selectedTeam && createInvite.mutate({
+                    teamId: selectedTeam.id,
+                    email: inviteForm.email,
+                    role: inviteForm.role,
+                    expiresAt: inviteForm.expiresAt ? new Date(inviteForm.expiresAt).toISOString() : undefined,
+                  })}
+                  disabled={!selectedTeam || createInvite.isPending}
+                  className="h-btn-primary disabled:opacity-50"
+                >
+                  Criar convite
                 </button>
               </div>
 
@@ -270,59 +301,6 @@ export function TeamsPanel() {
           </div>
         </div>
       </section>
-
-      <Modal
-        open={inviteModalOpen}
-        title="Novo convite"
-        onClose={() => setInviteModalOpen(false)}
-        footer={(
-          <>
-            <button onClick={() => setInviteModalOpen(false)} className="h-btn">Cancelar</button>
-            <button
-              onClick={() => selectedTeam && createInvite.mutate({
-                teamId: selectedTeam.id,
-                email: inviteForm.email,
-                role: inviteForm.role,
-                expiresAt: inviteForm.expiresAt ? new Date(inviteForm.expiresAt).toISOString() : undefined,
-              })}
-              className="h-btn-primary"
-            >
-              Criar convite
-            </button>
-          </>
-        )}
-      >
-        <div className="grid gap-3">
-          <label className="space-y-1 text-sm">
-            <span className="text-gray-400">Email</span>
-            <input
-              value={inviteForm.email}
-              onChange={(event) => setInviteForm((state) => ({ ...state, email: event.target.value }))}
-              className="h-input"
-            />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-gray-400">Role do convite</span>
-            <select
-              value={inviteForm.role}
-              onChange={(event) => setInviteForm((state) => ({ ...state, role: event.target.value }))}
-              className="h-input"
-            >
-              <option value="member">member</option>
-              <option value="manager">manager</option>
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-gray-400">Expira em</span>
-            <input
-              type="datetime-local"
-              value={inviteForm.expiresAt}
-              onChange={(event) => setInviteForm((state) => ({ ...state, expiresAt: event.target.value }))}
-              className="h-input"
-            />
-          </label>
-        </div>
-      </Modal>
     </>
   )
 }

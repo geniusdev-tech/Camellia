@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, Flame, Library, Repeat2, Sparkles, Users } from 'lucide-react'
+import { ExternalLink, Repeat2 } from 'lucide-react'
 import { ReleaseControlCenter } from '@/components/features/ReleaseControlCenter'
 import { githubAPI } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
@@ -138,38 +138,6 @@ export default function RepositoryPage() {
 
           <ReleaseControlCenter />
         </main>
-
-        <aside className="space-y-4">
-          <div className="social-side-card">
-            <div className="flex items-center gap-2">
-              <Flame className="h-4 w-4 text-orange-300" />
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Tendências</p>
-            </div>
-            <div className="mt-3 space-y-2 text-sm text-gray-200">
-              <div className="social-tile">#stable-publish</div>
-              <div className="social-tile">#rollback-safe</div>
-              <div className="social-tile">#supply-chain</div>
-            </div>
-          </div>
-          <div className="social-side-card">
-            <div className="flex items-center gap-2 text-sm text-white">
-              <Library className="h-4 w-4 text-cyan-300" />
-              Curadoria
-            </div>
-            <p className="mt-2 text-xs text-gray-500">Mantenha versões com changelog e metadados completos para melhorar a descoberta.</p>
-          </div>
-          <div className="social-side-card border-emerald-400/35 bg-emerald-400/10 text-sm text-emerald-100">
-            <div className="inline-flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              Publicar com confiança
-            </div>
-            <p className="mt-2 text-xs text-emerald-200/90">Use fluxos e validações antes de promover para produção.</p>
-          </div>
-          <Link href="/teams" className="social-link inline-flex items-center gap-2">
-            <Users className="h-4 w-4 text-cyan-300" />
-            Compartilhar com times
-          </Link>
-        </aside>
       </section>
     </div>
   )

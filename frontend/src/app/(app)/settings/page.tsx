@@ -8,12 +8,10 @@ import {
 } from 'lucide-react'
 import { authAPI } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
-import { MFASetupModal } from '@/components/features/MFASetupModal'
 import { AuditLogPanel } from '@/components/features/AuditLogPanel'
 
 export default function SettingsPage() {
   const { user, accessToken, refreshToken, setSession } = useAuthStore()
-  const [mfaModal, setMfaModal]   = useState(false)
   const [loading, setLoading]     = useState(false)
   const [feedback, setFeedback]   = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
 
@@ -76,13 +74,10 @@ export default function SettingsPage() {
                 Desativar
               </button>
             ) : (
-              <button
-                onClick={() => setMfaModal(true)}
-                className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl bg-accent/10 hover:bg-accent/20 border border-accent/20 text-accent text-sm font-medium transition-all"
-              >
+              <div className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-gray-400 text-sm font-medium">
                 <QrCode className="w-3.5 h-3.5" />
-                Ativar 2FA
-              </button>
+                Em breve
+              </div>
             )}
           </div>
         </div>
@@ -305,16 +300,6 @@ export default function SettingsPage() {
         </aside>
       </section>
 
-      {/* 2FA Modal */}
-      <MFASetupModal
-        open={mfaModal}
-        onClose={() => setMfaModal(false)}
-        onSuccess={() => {
-          if (user && accessToken) setSession({ ...user, has_2fa: true }, accessToken, refreshToken)
-          setMfaModal(false)
-          toast('ok', '2FA ativado com sucesso!')
-        }}
-      />
     </div>
   )
 }
