@@ -37,7 +37,7 @@
     "nestjs-pino": "^4.4.1",
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
-    "pino": "^9.3.2",
+    "pino": "^10.3.1",
     "pino-pretty": "^11.2.2",
     "prisma": "^6.7.0",
     "prom-client": "^15.1.3",
