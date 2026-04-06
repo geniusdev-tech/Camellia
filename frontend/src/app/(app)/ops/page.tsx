@@ -1,66 +1,93 @@
+'use client'
+
 import Link from 'next/link'
-import { AlertTriangle, Flame, ShieldCheck, Workflow } from 'lucide-react'
-import { OpsPanel } from '@/components/features/OpsPanel'
+import { useQuery } from '@tanstack/react-query'
+import { AlertTriangle, ShieldCheck } from 'lucide-react'
+import { githubAPI } from '@/lib/api'
+import { useAuthStore } from '@/store/auth'
 
 export default function OpsPage() {
+  const { user } = useAuthStore()
+  const githubLinked = Boolean(user?.github_id || user?.githubId)
+
+  const dashboardQuery = useQuery({
+    queryKey: ['github', 'dashboard', 'ops-view'],
+    queryFn: () => githubAPI.dashboard({ scope: 'all', sortBy: 'updated', issuesThreshold: 10 }),
+    enabled: githubLinked,
+    staleTime: 45_000,
+    retry: 1,
+  })
+
+  const data = dashboardQuery.data
+
+  if (!githubLinked) {
+    return (
+      <div className="social-page">
+        <section className="social-hero">
+          <h1 className="text-3xl font-bold text-slate-100">Operações via GitHub</h1>
+          <p className="mt-2 text-sm text-slate-300">Conecte sua conta para visualizar saúde e segurança dos repositórios.</p>
+          <Link href="/login" className="mt-4 inline-flex rounded-xl border border-orange-400/35 bg-orange-500/15 px-4 py-2 text-sm text-orange-100">Ir para login</Link>
+        </section>
+      </div>
+    )
+  }
+
   return (
-    <div className="social-page">
+    <div className="social-page space-y-4">
       <section className="social-hero">
-        <p className="text-xs font-mono uppercase tracking-[0.2em] text-cyan-300">Feed de Operações</p>
-        <h1 className="mt-2 text-3xl font-bold text-white">Controle operacional em tempo real</h1>
-        <p className="mt-2 max-w-3xl text-sm text-gray-400">
-          Monitore jobs, enfileire workflows e acompanhe métricas como um painel social de atividade.
-        </p>
+        <div className="social-hero-content">
+          <div className="hero-badge">GitHub Ops</div>
+          <h1 className="mt-3 text-3xl font-semibold text-white">Saúde e segurança dos repositórios</h1>
+          <p className="mt-2 text-sm text-slate-300">Indicadores operacionais do dashboard oficial do GitHub.</p>
+        </div>
+        <div className="social-hero-cta">
+          <p className="text-xs text-slate-400">Monitore filas e métricas em um único feed.</p>
+        </div>
       </section>
 
-      <section className="social-layout">
-        <aside className="space-y-4">
-          <div className="social-side-card">
-            <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Canais de operação</p>
-            <div className="mt-3 space-y-2 text-sm text-gray-200">
-              <div className="social-tile">Monitor de fila</div>
-              <div className="social-tile">Alertas de deploy</div>
-              <div className="social-tile">Sala de incidentes</div>
-            </div>
-          </div>
-          <div className="social-side-card text-sm text-gray-200">
-            <div className="inline-flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-cyan-300" />
-              Meta de estabilidade
-            </div>
-            <p className="mt-2 text-xs text-gray-500">Mantenha jobs de scan/publish com retries controlados para evitar spam na fila.</p>
-          </div>
-        </aside>
+      {dashboardQuery.isLoading && <p className="text-sm text-slate-400">Carregando dados...</p>}
+      {dashboardQuery.isError && <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">Falha ao carregar dados de operação.</p>}
 
-        <main>
-          <OpsPanel />
-        </main>
+      {data && (
+        <>
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="social-tile"><p className="text-[11px] text-slate-400">Sem descrição</p><p className="mt-1 text-xl font-semibold text-slate-100">{data.health.reposWithoutDescription}</p></div>
+            <div className="social-tile"><p className="text-[11px] text-slate-400">Sem licença</p><p className="mt-1 text-xl font-semibold text-slate-100">{data.health.reposWithoutLicense}</p></div>
+            <div className="social-tile"><p className="text-[11px] text-slate-400">Issues críticas</p><p className="mt-1 text-xl font-semibold text-slate-100">{data.health.reposWithOpenIssuesAboveThreshold}</p></div>
+            <div className="social-tile"><p className="text-[11px] text-slate-400">Branch protection</p><p className="mt-1 text-xl font-semibold text-slate-100">{data.security.withBranchProtection}/{data.security.scannedRepos}</p></div>
+          </section>
 
-        <aside className="space-y-4">
-          <div className="social-side-card">
-            <div className="flex items-center gap-2">
-              <Flame className="h-4 w-4 text-orange-300" />
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Tendências</p>
+          <section className="grid gap-3 lg:grid-cols-2">
+            <div className="social-side-card">
+              <div className="inline-flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-orange-300" />
+                <p className="text-xs font-mono uppercase tracking-[0.18em] text-slate-400">Segurança</p>
+              </div>
+              <div className="mt-3 space-y-2 text-sm text-slate-300">
+                <div className="flex justify-between"><span>Sem proteção</span><span>{data.security.withoutBranchProtection}</span></div>
+                <div className="flex justify-between"><span>Dependabot</span><span>{data.security.dependabotAvailable ? String(data.security.reposWithDependabotAlerts ?? 0) : 'N/A'}</span></div>
+                <div className="flex justify-between"><span>Code scanning</span><span>{data.security.codeScanningAvailable ? String(data.security.reposWithCodeScanningAlerts ?? 0) : 'N/A'}</span></div>
+              </div>
             </div>
-            <div className="mt-3 space-y-2 text-sm text-gray-200">
-              <div className="social-tile">#publish-async</div>
-              <div className="social-tile">#scan-queue</div>
-              <div className="social-tile">#route-metrics</div>
+
+            <div className="social-side-card">
+              <div className="inline-flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-300" />
+                <p className="text-xs font-mono uppercase tracking-[0.18em] text-slate-400">Distribuição por linguagem</p>
+              </div>
+              <div className="mt-3 space-y-2">
+                {data.health.languages.length === 0 ? <p className="text-sm text-slate-400">Sem dados.</p> : null}
+                {data.health.languages.map((item) => (
+                  <div key={item.language} className="social-tile flex items-center justify-between">
+                    <span className="text-sm text-slate-200">{item.language}</span>
+                    <span className="text-xs text-slate-400">{item.count}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="social-side-card border-amber-400/35 bg-amber-400/10 text-sm text-amber-100">
-            <div className="inline-flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" />
-              Aviso operacional
-            </div>
-            <p className="mt-2 text-xs text-amber-200/90">Falhas repetidas de banco/queue devem gerar investigação de configuração antes de novo deploy.</p>
-          </div>
-          <Link href="/repository" className="social-link inline-flex items-center gap-2">
-            <Workflow className="h-4 w-4 text-cyan-300" />
-            Voltar para releases
-          </Link>
-        </aside>
-      </section>
+          </section>
+        </>
+      )}
     </div>
   )
 }

@@ -58,6 +58,19 @@ export function parseEnv(source: Record<string, unknown>): AppConfig {
     if (origins.includes('*')) {
       throw new Error('Invalid environment configuration: ALLOWED_ORIGIN cannot contain "*" in production');
     }
+
+    const placeholderDefaults: Record<string, string> = {
+      REDIS_PASSWORD: 'change_me',
+      ADMIN_PASSWORD: 'ChangeMeNow_12345',
+      METRICS_TOKEN: 'change_me_metrics_token',
+    };
+
+    for (const [key, placeholder] of Object.entries(placeholderDefaults)) {
+      const value = env[key as keyof AppConfig];
+      if (value === placeholder) {
+        throw new Error(`Invalid environment configuration: ${key} is still set to the placeholder value "${placeholder}" in production. Set a secure value in your .env or secrets manager.`);
+      }
+    }
   }
   return env;
 }

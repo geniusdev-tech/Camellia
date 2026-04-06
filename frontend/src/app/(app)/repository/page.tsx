@@ -2,8 +2,7 @@
 
 import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, Repeat2 } from 'lucide-react'
-import { ReleaseControlCenter } from '@/components/features/ReleaseControlCenter'
+import { ExternalLink, GitCommitHorizontal, GitPullRequest, MessageSquare, RefreshCw, Star } from 'lucide-react'
 import { githubAPI } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 
@@ -12,6 +11,14 @@ export default function RepositoryPage() {
   const { user } = useAuthStore()
   const githubLinked = Boolean(user?.github_id || user?.githubId)
 
+  const dashboardQuery = useQuery({
+    queryKey: ['github', 'dashboard', 'repository-feed'],
+    queryFn: () => githubAPI.dashboard({ sortBy: 'updated', scope: 'all', issuesThreshold: 10 }),
+    enabled: githubLinked,
+    staleTime: 45_000,
+    retry: 1,
+  })
+
   const reposQuery = useQuery({
     queryKey: ['github', 'repos'],
     queryFn: githubAPI.repos,
@@ -19,6 +26,7 @@ export default function RepositoryPage() {
     staleTime: 60_000,
     retry: 1,
   })
+
   const profileQuery = useQuery({
     queryKey: ['github', 'profile'],
     queryFn: githubAPI.profile,
@@ -27,141 +35,129 @@ export default function RepositoryPage() {
     retry: 1,
   })
 
-  const syncReposMutation = useMutation({
+  const syncMutation = useMutation({
     mutationFn: githubAPI.sync,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['github', 'repos'] })
+      qc.invalidateQueries({ queryKey: ['github'] })
     },
   })
 
-  const githubRepos = reposQuery.data?.repos ?? []
-  const githubProfile = profileQuery.data?.profile
-  const fallbackName = user?.name || user?.email || 'Usuário'
-  const fallbackLogin = (user?.email || '').split('@')[0] || 'github-user'
+  const repos = reposQuery.data?.repos ?? []
+  const profile = profileQuery.data?.profile
+  const activity = dashboardQuery.data?.recentActivity ?? []
+
+  const activityIcon = {
+    commit: GitCommitHorizontal,
+    pull_request: GitPullRequest,
+    issue: MessageSquare,
+  } as const
+
+  if (!githubLinked) {
+    return (
+      <div className="social-page">
+        <section className="social-hero">
+          <p className="text-xs font-mono uppercase tracking-[0.22em] text-orange-300">Repository Feed</p>
+          <h1 className="mt-2 text-3xl font-bold text-slate-100">Conecte sua conta GitHub</h1>
+          <p className="mt-2 text-sm text-slate-300">Esta rota mostra apenas dados sincronizados do GitHub.</p>
+          <Link href="/login" className="mt-4 inline-flex items-center gap-2 rounded-xl border border-orange-400/35 bg-orange-500/15 px-4 py-2 text-sm text-orange-100">
+            Ir para login
+          </Link>
+        </section>
+      </div>
+    )
+  }
 
   return (
-    <div className="social-page">
+    <div className="social-page space-y-4">
       <section className="social-hero">
-        <p className="text-xs font-mono uppercase tracking-[0.2em] text-cyan-300">Feed do Repositório</p>
-        <h1 className="mt-2 text-3xl sm:text-4xl font-bold text-white">Timeline de releases</h1>
-        <p className="mt-3 max-w-3xl text-sm text-gray-300">
-          Navegue por versões, publique atualizações e acompanhe o estado do repositório como um feed de atividade.
-        </p>
+        <div className="social-hero-content">
+          <div className="hero-badge">Repository feed</div>
+          <h1 className="mt-3 text-3xl font-semibold text-white">Repositórios e atividade recente</h1>
+          <p className="mt-2 text-sm text-slate-300">Feed social com dados oficiais do GitHub.</p>
+        </div>
+        <div className="social-hero-cta">
+          <button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} className="h-btn-primary">
+            <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+            Sincronizar
+          </button>
+        </div>
       </section>
 
-      <section className="social-layout">
-        <aside className="space-y-4">
-          <div className="social-side-card">
-            <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Comunidades ativas</p>
-            <div className="mt-3 space-y-2">
-              <div className="social-tile text-sm">Engenharia de Releases</div>
-              <div className="social-tile text-sm">Revisão de Catálogo</div>
-              <div className="social-tile text-sm">Time de Segurança</div>
-            </div>
-          </div>
-          <div className="social-side-card">
-            <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Atalhos</p>
-            <div className="mt-3 space-y-2">
-              <Link href="/dashboard" className="social-link">Voltar ao feed</Link>
-              <Link href="/ops" className="social-link">Ver operações</Link>
-            </div>
-          </div>
-        </aside>
+      {reposQuery.isLoading && <p className="text-sm text-slate-400">Carregando repositórios...</p>}
+      {reposQuery.isError && <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">Falha ao carregar repositórios.</p>}
 
-        <main>
-          <section className="glass rounded-2xl p-4 sm:p-5 mb-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">GitHub</p>
-                <h2 className="mt-1 text-base font-semibold text-white">Repositórios conectados</h2>
+      <section className="grid gap-3 lg:grid-cols-2">
+        <div className="social-side-card">
+          <p className="text-xs font-mono uppercase tracking-[0.18em] text-slate-400">Perfil GitHub</p>
+          {profile ? (
+            <div className="mt-3 flex items-start gap-3">
+              <img src={profile.avatarUrl} alt={profile.login} className="h-12 w-12 rounded-full border border-slate-600/70 object-cover" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-100">{profile.name || profile.login}</p>
+                <a href={profile.htmlUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-orange-300 hover:text-orange-200">
+                  @{profile.login} <ExternalLink className="h-3 w-3" />
+                </a>
+                <p className="mt-1 text-xs text-slate-400">{profile.followers} seguidores • {profile.following} seguindo • {profile.publicRepos} repositórios</p>
               </div>
-              {githubLinked && (
-                <button
-                  onClick={() => syncReposMutation.mutate()}
-                  disabled={syncReposMutation.isPending}
-                  className="inline-flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-all disabled:opacity-50"
-                >
-                  <Repeat2 className={`h-4 w-4 ${syncReposMutation.isPending ? 'animate-spin' : ''}`} />
-                  Sincronizar
-                </button>
-              )}
             </div>
+          ) : (
+            <p className="mt-3 text-sm text-slate-400">Perfil indisponível.</p>
+          )}
+        </div>
 
-            {!githubLinked && (
-              <p className="mt-3 text-sm text-gray-500">
-                Faça login com GitHub para carregar seus repositórios nesta seção.
-              </p>
-            )}
+        <div className="social-side-card">
+          <p className="text-xs font-mono uppercase tracking-[0.18em] text-slate-400">Resumo</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="social-tile">
+              <p className="text-[11px] text-slate-400">Repos em cache</p>
+              <p className="mt-1 text-lg font-semibold text-slate-100">{repos.length}</p>
+            </div>
+            <div className="social-tile">
+              <p className="text-[11px] text-slate-400">Último sync</p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">{dashboardQuery.data?.sync.lastSyncedAt ? new Date(dashboardQuery.data.sync.lastSyncedAt).toLocaleDateString('pt-BR') : 'N/A'}</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-            {githubLinked && reposQuery.isLoading && (
-              <p className="mt-3 text-sm text-gray-500">Carregando repositórios do GitHub...</p>
-            )}
-            {githubLinked && reposQuery.isError && (
-              <p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
-                Não foi possível carregar os repositórios agora. Tente sincronizar novamente.
-              </p>
-            )}
-            {githubLinked && profileQuery.isError && (
-              <p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
-                Perfil GitHub indisponível no momento. Exibindo dados básicos da conta.
-              </p>
-            )}
+      <section className="social-side-card">
+        <p className="text-xs font-mono uppercase tracking-[0.18em] text-slate-400">Repositórios</p>
+        <div className="mt-3 space-y-2">
+          {repos.length === 0 && !reposQuery.isLoading ? <p className="text-sm text-slate-400">Nenhum repositório sincronizado.</p> : null}
+          {repos.map((repo) => (
+            <a key={repo.id} href={repo.htmlUrl} target="_blank" rel="noreferrer" className="social-tile block hover:border-orange-400/35">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-sm font-semibold text-slate-100">{repo.fullName}</p>
+                <span className="text-[11px] text-slate-500">{new Date(repo.dbUpdatedAt).toLocaleDateString('pt-BR')}</span>
+              </div>
+              <p className="mt-1 line-clamp-2 text-xs text-slate-400">{repo.description || 'Sem descrição.'}</p>
+              <div className="mt-2 flex items-center gap-3 text-xs text-slate-400">
+                <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" />{repo.stargazers}</span>
+                <span>Forks {repo.forks}</span>
+                <span>{repo.language || 'N/A'}</span>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
 
-            {(githubProfile || githubLinked) && (
-              <div className="mt-3 rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3">
-                <div className="flex items-center gap-3">
-                  <img
-                    src={githubProfile?.avatarUrl || user?.avatarUrl || ''}
-                    alt={githubProfile?.login || fallbackLogin}
-                    className="h-10 w-10 rounded-full border border-white/10 object-cover"
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{githubProfile?.name || fallbackName}</p>
-                    {githubProfile?.htmlUrl ? (
-                      <a href={githubProfile.htmlUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:text-cyan-200">
-                        @{githubProfile.login} <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : (
-                      <p className="text-xs text-gray-500">@{fallbackLogin}</p>
-                    )}
-                  </div>
-                  <p className="ml-auto text-xs text-gray-400">
-                    {githubProfile ? `${githubProfile.followers} seguidores · ${githubProfile.publicRepos} repos` : `${githubRepos.length} repos em cache`}
-                  </p>
+      <section className="social-side-card">
+        <p className="text-xs font-mono uppercase tracking-[0.18em] text-slate-400">Atividade recente</p>
+        <div className="mt-3 space-y-2">
+          {activity.length === 0 ? <p className="text-sm text-slate-400">Sem eventos recentes.</p> : null}
+          {activity.map((item, idx) => {
+            const Icon = activityIcon[item.type]
+            return (
+              <a key={`${item.repo}-${item.createdAt}-${idx}`} href={item.url} target="_blank" rel="noreferrer" className="social-tile flex items-start gap-2.5">
+                <Icon className="mt-0.5 h-4 w-4 text-orange-300" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-slate-100">{item.title}</p>
+                  <p className="text-xs text-slate-500">{item.repo} • {new Date(item.createdAt).toLocaleString('pt-BR')}</p>
                 </div>
-                {githubProfile?.bio && <p className="mt-2 text-xs text-gray-400">{githubProfile.bio}</p>}
-              </div>
-            )}
-
-            {githubLinked && !reposQuery.isLoading && githubRepos.length === 0 && (
-              <p className="mt-3 text-sm text-gray-500">
-                Nenhum repositório sincronizado ainda. Use o botão acima para buscar os dados.
-              </p>
-            )}
-
-            {githubLinked && githubRepos.length > 0 && (
-              <div className="mt-4 grid gap-2.5 sm:gap-3 sm:grid-cols-2">
-                {githubRepos.slice(0, 8).map((repo) => (
-                  <a
-                    key={repo.id}
-                    href={repo.htmlUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-xl border border-white/10 bg-white/3 px-3 py-2.5 hover:bg-white/5 hover:border-cyan-400/25 transition-all"
-                  >
-                    <p className="text-sm font-medium text-white truncate">{repo.fullName}</p>
-                    <p className="mt-1 text-xs text-gray-500 line-clamp-2">{repo.description || 'Sem descrição.'}</p>
-                    <p className="mt-2 text-[11px] text-gray-600">
-                      {repo.language || 'N/A'} · ⭐ {repo.stargazers} · Forks {repo.forks}
-                    </p>
-                  </a>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <ReleaseControlCenter />
-        </main>
+              </a>
+            )
+          })}
+        </div>
       </section>
     </div>
   )

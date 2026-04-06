@@ -7,20 +7,21 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfig, parseEnv } from './common/config/env.schema';
 import { execSync } from 'child_process';
+import { markDbReady } from './common/state/db-readiness';
 
-async function runMigrations(): Promise<void> {
+async function runMigrations(logger: Logger): Promise<void> {
   const retryDelayMs = 5000;
   let attempt = 0;
 
   for (;;) {
     attempt += 1;
     try {
-      console.log(`[Database] Running migrations (attempt ${attempt})...`);
+      logger.log(`[Database] Running migrations (attempt ${attempt})...`);
       execSync('npx prisma migrate deploy', { stdio: 'inherit' });
-      console.log('[Database] Migrations completed successfully');
+      logger.log('[Database] Migrations completed successfully');
       return;
     } catch {
-      console.warn(`[Database] Failed to run migrations (attempt ${attempt}), retrying in ${retryDelayMs}ms...`);
+      logger.warn(`[Database] Failed to run migrations (attempt ${attempt}), retrying in ${retryDelayMs}ms...`);
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
     }
   }
@@ -28,7 +29,7 @@ async function runMigrations(): Promise<void> {
 
 async function bootstrap(): Promise<void> {
   const env: AppConfig = parseEnv(process.env);
-  
+
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
   });
@@ -47,8 +48,10 @@ async function bootstrap(): Promise<void> {
   logger.log(`GateStack backend listening on http://${env.HOST}:${env.PORT}`);
 
   // Run migrations in background after server is up so healthcheck responds immediately
-  runMigrations().catch((err) => {
-    console.error('[Database] Background migration error:', err);
+  runMigrations(logger).then(() => {
+    markDbReady();
+  }).catch((err) => {
+    logger.error('[Database] Background migration error:', err);
   });
 }
 

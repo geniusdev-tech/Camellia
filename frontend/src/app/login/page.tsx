@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Eye, EyeOff, AlertCircle, Loader2, Shield, ArrowLeft, Github } from 'lucide-react'
+import { Eye, EyeOff, Loader2, TerminalSquare, ArrowLeft, Github, ShieldAlert } from 'lucide-react'
 import { authAPI, githubAPI } from '@/lib/api'
 import { getApiBase } from '@/lib/tauri'
 import { useAuthStore } from '@/store/auth'
@@ -24,7 +24,6 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // GitHub token capture
   useEffect(() => {
     const token = searchParams.get('token')
     const oauthSuccess = searchParams.get('oauth') === 'success'
@@ -57,7 +56,6 @@ function LoginForm() {
               },
               accessToken,
             )
-            // Best-effort sync so repositories are available immediately after OAuth login.
             void githubAPI.sync().catch(() => undefined)
             router.replace('/dashboard')
             return
@@ -76,7 +74,6 @@ function LoginForm() {
 
     if (token) {
       setLoading(true)
-      // Save it temporarily so fetchAPI has it for the /me request
       useAuthStore.getState().updateAccessToken(token)
       authAPI.me()
         .then((res) => {
@@ -115,9 +112,9 @@ function LoginForm() {
   }
 
   const ctaText = useMemo(() => {
-    if (mode === 'register') return 'Criar Conta'
-    if (mode === 'mfa') return 'Confirmar Código'
-    return 'Entrar'
+    if (mode === 'register') return 'boot --create-user'
+    if (mode === 'mfa') return 'verify --totp'
+    return 'auth --login'
   }, [mode])
 
   const handleSubmit = useCallback(
@@ -145,8 +142,8 @@ function LoginForm() {
             return
           }
           const response = await authAPI.loginMFA({ code: mfaCode, user_id: userId })
-          const token = response.accessToken || response.access_token
-          if (response.success && token) {
+          const tokenFromMfa = response.accessToken || response.access_token
+          if (response.success && tokenFromMfa) {
             setSession(
               {
                 user_id: Number(response.user_id || userId),
@@ -154,7 +151,7 @@ function LoginForm() {
                 has_2fa: true,
                 role: response.role || null,
               },
-              token,
+              tokenFromMfa,
               response.refresh_token,
             )
             router.replace('/dashboard')
@@ -169,8 +166,8 @@ function LoginForm() {
           setUserId(loginResponse.user_id ?? null)
           setMode('mfa')
         } else {
-          const token = loginResponse.accessToken || loginResponse.access_token
-          if (loginResponse.success && token) {
+          const tokenFromLogin = loginResponse.accessToken || loginResponse.access_token
+          if (loginResponse.success && tokenFromLogin) {
             setSession(
               {
                 user_id: Number(loginResponse.user_id || 0) || undefined,
@@ -178,7 +175,7 @@ function LoginForm() {
                 has_2fa: loginResponse.has_2fa || false,
                 role: loginResponse.role || null,
               },
-              token,
+              tokenFromLogin,
               loginResponse.refresh_token,
             )
             router.replace('/dashboard')
@@ -196,44 +193,50 @@ function LoginForm() {
   )
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md animate-fade-up">
-        {/* Glass Card */}
-        <div className="glass rounded-3xl p-8 sm:p-10 space-y-8 animate-border-glow">
-          {/* Logo & Header */}
-          <div className="text-center space-y-3">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-green-400/20 to-cyan-400/20 border border-green-400/20 cyber-glow">
-              <Shield className="h-7 w-7 text-green-400" />
-            </div>
-            <div>
-              <p className="text-xs font-mono text-cyan-400 tracking-[0.3em] uppercase">
-                {mode === 'register' ? 'novo acesso' : mode === 'mfa' ? 'verificação' : 'autenticação'}
-              </p>
-              <h1 className="text-2xl sm:text-3xl font-bold mt-1">
-                <span className="bg-gradient-to-r from-green-400 to-cyan-400 bg-clip-text text-transparent">
-                  GateStack
-                </span>
-              </h1>
-              <p className="text-gray-500 text-sm mt-1">
-                {mode === 'register' && 'Crie sua conta para começar'}
-                {mode === 'login' && 'Entre para acessar o dashboard'}
-                {mode === 'mfa' && 'Confirme seu código de autenticação'}
-              </p>
-            </div>
+    <main className="login-matrix-bg min-h-screen px-4 py-8 sm:py-12">
+      <div className="login-matrix-overlay" />
+      <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+        <section className="login-terminal-panel">
+          <div className="login-terminal-header">
+            <span className="login-dot bg-red-400/80" />
+            <span className="login-dot bg-amber-300/90" />
+            <span className="login-dot bg-orange-400/85" />
+            <p className="ml-3 text-[11px] text-orange-200/70">root@gatestack:~</p>
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-3 p-5 sm:p-7">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-orange-300/90">devsecops terminal</p>
+            <h1 className="text-3xl font-bold text-orange-100 sm:text-4xl">GateStack Access Node</h1>
+            <p className="max-w-xl text-sm text-orange-200/75">
+              Ambiente de autenticação endurecido. Credenciais e tokens são validados com políticas de segurança em pipeline.
+            </p>
+
+            <div className="mt-5 space-y-2 rounded-2xl border border-orange-500/25 bg-black/30 p-4 font-mono text-xs text-orange-200/80">
+              <p>&gt; sudo service gate-auth status</p>
+              <p className="text-orange-300">active (running)</p>
+              <p>&gt; sudo gate-check --policy hardened</p>
+              <p className="text-orange-300">policy: ok | mfa: enforced | github-oauth: ready</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="login-auth-panel">
+          <div className="mb-4 flex items-center gap-2 text-orange-200">
+            <TerminalSquare className="h-4 w-4" />
+            <p className="text-xs font-mono uppercase tracking-[0.18em]">{mode === 'mfa' ? 'MFA Challenge' : 'Secure Login'}</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="flex items-center gap-2.5 p-3.5 rounded-xl text-sm glass-subtle" style={{ borderColor: 'rgba(239, 68, 68, 0.25)', background: 'rgba(239, 68, 68, 0.06)' }}>
-                <AlertCircle className="h-4 w-4 flex-shrink-0 text-red-400" />
-                <span className="text-red-300">{error}</span>
+              <div className="flex items-start gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+                <ShieldAlert className="mt-0.5 h-4 w-4" />
+                <span>{error}</span>
               </div>
             )}
 
             {mode === 'mfa' ? (
               <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">Código MFA</label>
+                <label className="text-xs uppercase tracking-[0.18em] text-orange-300/80">totp code</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -241,40 +244,35 @@ function LoginForm() {
                   value={mfaCode}
                   onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
                   placeholder="000000"
-                  className="h-input text-center text-2xl font-mono tracking-[0.5em]"
+                  className="login-input text-center font-mono text-2xl tracking-[0.45em]"
                   autoFocus
                 />
-                <p className="text-xs text-gray-500 text-center">Digite o código do seu autenticador</p>
               </div>
             ) : (
               <>
                 <div className="space-y-2">
-                  <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">Email</label>
+                  <label className="text-xs uppercase tracking-[0.18em] text-orange-300/80">email</label>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="seu@email.com"
-                    className="h-input"
+                    placeholder="dev@company.com"
+                    className="login-input"
                     autoFocus
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">Senha</label>
+                  <label className="text-xs uppercase tracking-[0.18em] text-orange-300/80">password</label>
                   <div className="relative">
                     <input
                       type={showPwd ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="h-input pr-12"
+                      className="login-input pr-12"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPwd(!showPwd)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-white/5 transition-all"
-                    >
+                    <button type="button" onClick={() => setShowPwd((current) => !current)} className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-300/70 hover:text-orange-200">
                       {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
@@ -282,42 +280,22 @@ function LoginForm() {
               </>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3.5 px-4 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-green-400 to-emerald-500 text-dark-950 hover:shadow-lg hover:shadow-green-400/25 active:scale-[0.98]"
-            >
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            <button type="submit" disabled={loading} className="login-submit-btn">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {ctaText}
             </button>
-            
-            {mode === 'login' && (
-              <>
-                <div className="relative flex items-center py-2">
-                  <div className="flex-grow border-t border-white/10"></div>
-                  <span className="flex-shrink-0 mx-4 text-xs font-mono text-gray-500 uppercase tracking-widest">ou</span>
-                  <div className="flex-grow border-t border-white/10"></div>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={handleGithubLogin}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl font-semibold text-sm transition-all text-white bg-[#24292e] border border-white/10 hover:bg-[#2f363d] focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-40"
-                >
-                  <Github className="h-5 w-5" />
-                  Continuar com GitHub
-                </button>
-              </>
-            )}
+            {mode === 'login' ? (
+              <button type="button" onClick={handleGithubLogin} disabled={loading} className="login-github-btn">
+                <Github className="h-4 w-4" />
+                oauth --provider github
+              </button>
+            ) : null}
           </form>
 
-          {/* Toggle Mode */}
-          {mode !== 'mfa' && (
-            <div className="text-center text-sm">
-              <span className="text-gray-500">
-                {mode === 'register' ? 'Já tem conta? ' : 'Não tem conta? '}
-              </span>
+          {mode !== 'mfa' ? (
+            <div className="mt-4 text-sm text-orange-200/75">
+              <span>{mode === 'register' ? 'já possui acesso? ' : 'novo no ambiente? '}</span>
               <button
                 type="button"
                 onClick={() => {
@@ -325,14 +303,12 @@ function LoginForm() {
                   setError('')
                   setPassword('')
                 }}
-                className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
+                className="font-semibold text-orange-300 hover:text-orange-200"
               >
-                {mode === 'register' ? 'Entrar' : 'Criar conta'}
+                {mode === 'register' ? 'auth --login' : 'boot --create-user'}
               </button>
             </div>
-          )}
-
-          {mode === 'mfa' && (
+          ) : (
             <button
               type="button"
               onClick={() => {
@@ -340,18 +316,13 @@ function LoginForm() {
                 setMfaCode('')
                 setError('')
               }}
-              className="w-full flex items-center justify-center gap-2 py-2 text-sm text-gray-500 hover:text-gray-300 transition-colors"
+              className="mt-4 inline-flex items-center gap-2 text-sm text-orange-200/70 hover:text-orange-200"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Voltar ao login
+              return --login
             </button>
           )}
-        </div>
-
-        {/* Footer */}
-        <p className="text-center text-xs text-gray-600 mt-6 font-mono">
-          gatestack v3.0 · conformidade sem caos
-        </p>
+        </section>
       </div>
     </main>
   )
@@ -359,7 +330,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-cyan-400" /></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-orange-300" /></div>}>
       <LoginForm />
     </Suspense>
   )

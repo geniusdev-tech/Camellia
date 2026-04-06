@@ -47,19 +47,15 @@ type SessionSnapshot = {
   isAuthenticated: boolean
 }
 
-let cachedSession: SessionSnapshot = {
-  accessToken: useAuthStore.getState().accessToken,
-  refreshToken: useAuthStore.getState().refreshToken,
-  isAuthenticated: useAuthStore.getState().isAuthenticated,
+function getSession(): SessionSnapshot {
+  const store = useAuthStore.getState()
+  return {
+    accessToken: store.accessToken,
+    refreshToken: store.refreshToken,
+    isAuthenticated: store.isAuthenticated,
+  }
 }
 
-useAuthStore.subscribe((state) => {
-  cachedSession = {
-    accessToken: state.accessToken,
-    refreshToken: state.refreshToken,
-    isAuthenticated: state.isAuthenticated,
-  }
-})
 
 class ApiError extends Error {
   status: number
@@ -174,7 +170,7 @@ async function fetchAPI<T = ApiResponse>(
   const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData
 
   const buildHeaders = (): HeadersInit => {
-    const session = cachedSession
+    const session = getSession()
     return {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(session.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {}),

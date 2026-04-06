@@ -4,17 +4,21 @@
 
 /* ── Custom Properties ────────────────────────── */
 :root {
-  --color-dark-950: #07090d;
-  --color-dark-900: #10141c;
-  --color-dark-800: #191f2b;
-  --color-dark-700: #252d3b;
-  --color-green-400: #4ade80;
-  --color-green-500: #22c55e;
-  --color-cyan-400: #22d3ee;
-  --color-cyan-500: #06b6d4;
-  --glass-bg: rgba(16, 20, 28, 0.66);
-  --glass-border: rgba(34, 211, 238, 0.16);
+  --color-dark-950: #0f172a;
+  --color-dark-900: #111b2e;
+  --color-dark-800: #1b2339;
+  --color-dark-700: #26304c;
+  --color-accent: #ffb703;
+  --color-accent-soft: #ffe8a1;
+  --color-panel: rgba(255, 255, 255, 0.04);
+  --glass-bg: rgba(15, 23, 42, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.12);
   --glass-blur: 18px;
+  --social-navy: #0b1320;
+  --social-panel: #121c2f;
+  --social-panel-soft: #1c2943;
+  --social-line: rgba(255, 183, 3, 0.25);
+  --social-accent: #ffb703;
 }
 
 /* ── Keyframes ────────────────────────────────── */
@@ -59,6 +63,11 @@
   50% { border-color: rgba(6, 182, 212, 0.25); }
 }
 
+@keyframes matrix-fall {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 180px; }
+}
+
 /* ── Base ─────────────────────────────────────── */
 @layer base {
   html {
@@ -70,9 +79,9 @@
   body {
     @apply antialiased font-sans text-gray-100;
     background:
-      radial-gradient(circle at 8% -10%, rgba(34, 211, 238, 0.16), transparent 45%),
-      radial-gradient(circle at 100% 0%, rgba(74, 222, 128, 0.12), transparent 38%),
-      var(--color-dark-950);
+      radial-gradient(circle at 10% 20%, rgba(255, 183, 3, 0.15), transparent 45%),
+      radial-gradient(circle at 85% 0%, rgba(19, 37, 69, 0.5), transparent 40%),
+      linear-gradient(180deg, #0f172a 0%, #111b2e 45%, #1b2339 100%);
   }
 
   #__next {
@@ -80,11 +89,11 @@
   }
 
   ::selection {
-    @apply bg-cyan-400/30 text-white;
+    @apply bg-[rgba(255,183,3,0.45)] text-gray-900;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply font-display font-bold text-white;
+    @apply font-display font-extrabold text-white;
     letter-spacing: -0.01em;
   }
 
@@ -93,7 +102,7 @@
   }
 
   a {
-    @apply text-green-400 hover:text-cyan-400 transition-colors duration-200;
+    @apply text-orange-300 hover:text-amber-200 transition-colors duration-200;
   }
 
   button:focus-visible,
@@ -101,7 +110,7 @@
   input:focus-visible,
   textarea:focus-visible,
   select:focus-visible {
-    outline: 2px solid rgba(34, 211, 238, 0.55);
+    outline: 2px solid rgba(251, 146, 60, 0.55);
     outline-offset: 2px;
   }
 }
@@ -120,10 +129,10 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   @apply rounded-full;
-  background: rgba(74, 222, 128, 0.25);
+  background: rgba(251, 146, 60, 0.35);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(6, 182, 212, 0.4);
+  background: rgba(234, 88, 12, 0.55);
 }
 
 /* ── Design System Utilities ──────────────────── */
@@ -274,41 +283,295 @@
   .container { @apply mx-auto max-w-7xl; }
 
   /* ─── Social Layout ────────────────────────── */
-  .social-page { @apply mx-auto max-w-7xl px-3 py-5 sm:px-4 sm:py-7 lg:px-6; }
-
-  .social-hero {
-    @apply glass mb-7 rounded-3xl p-6;
+  .social-page {
+    @apply mx-auto w-full max-w-4xl px-3 py-5 sm:px-5;
+    background: rgba(5, 8, 10, 0.9);
+    border: 1px solid rgba(93, 252, 123, 0.28);
+    border-radius: 36px;
+    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.85);
   }
 
-  .social-layout { @apply grid gap-4 sm:gap-6 xl:grid-cols-[260px_minmax(0,1fr)_280px]; }
+  .social-hero {
+    @apply mb-6 rounded-[28px] p-6;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5rem;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(11, 26, 45, 0.92));
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 20px 50px rgba(2, 6, 12, 0.85);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .social-hero-content {
+    position: relative;
+    z-index: 1;
+  }
+
+  .social-hero-cta {
+    @apply space-y-3;
+    align-self: center;
+  }
+
+  .hero-badge {
+    @apply inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-mono tracking-[0.3em];
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .social-hero::after {
+    content: '';
+    position: absolute;
+    inset: 8px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    pointer-events: none;
+  }
+
+  .social-hero-content {
+    position: relative;
+    z-index: 1;
+  }
+
+  .social-layout { @apply grid gap-3 lg:gap-4 xl:grid-cols-[220px_minmax(0,1fr)_240px]; }
 
   .social-side-card {
-    @apply glass rounded-2xl p-4;
+    @apply rounded-3xl p-5;
+    background: linear-gradient(180deg, rgba(5, 10, 9, 0.95), rgba(10, 17, 15, 0.9));
+    border: 1px solid rgba(93, 252, 123, 0.25);
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.65);
   }
 
   .social-tile {
     @apply rounded-xl p-3 text-gray-200;
-    background: rgba(26, 27, 34, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(37, 41, 49, 0.68);
+    border: 1px solid rgba(251, 146, 60, 0.17);
   }
 
   .social-link {
-    @apply block rounded-xl px-3 py-2 text-sm text-gray-300 transition-all;
-    background: rgba(26, 27, 34, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    @apply block rounded-xl px-3 py-2 text-sm text-[rgba(93,252,123,0.95)] transition-all;
+    background: rgba(8, 12, 11, 0.85);
+    border: 1px solid rgba(93, 252, 123, 0.2);
   }
 
   .social-link:hover {
-    background: rgba(26, 27, 34, 0.8);
-    border-color: rgba(6, 182, 212, 0.2);
+    background: rgba(0, 0, 0, 0.95);
+    border-color: rgba(93, 252, 123, 0.5);
     @apply text-white;
+  }
+
+  .social-shell {
+    @apply mx-auto grid h-screen max-w-[1500px] overflow-hidden px-2 pb-2 pt-2 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_300px];
+    gap: 12px;
+  }
+
+  .social-left-rail {
+    @apply flex h-full flex-col rounded-3xl p-4;
+    background: linear-gradient(180deg, rgba(20, 22, 28, 0.98), rgba(18, 19, 25, 0.9));
+    border: 1px solid var(--social-line);
+  }
+
+  .social-brand-row {
+    @apply flex items-center gap-2 rounded-2xl px-2 py-2;
+    border: 1px solid rgba(251, 146, 60, 0.2);
+    background: rgba(22, 23, 31, 0.76);
+  }
+
+  .social-logo-pill {
+    @apply flex h-9 w-9 items-center justify-center rounded-xl text-orange-100;
+    background: rgba(249, 115, 22, 0.2);
+    border: 1px solid rgba(251, 146, 60, 0.42);
+  }
+
+  .social-brand-name {
+    @apply text-sm font-semibold leading-none text-slate-100;
+  }
+
+  .social-brand-sub {
+    @apply mt-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-400;
+  }
+
+  .social-nav-item {
+    @apply flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-300 transition-all;
+    border: 1px solid transparent;
+  }
+
+  .social-nav-item:hover {
+    @apply text-slate-100;
+    background: rgba(56, 44, 35, 0.54);
+    border-color: rgba(251, 146, 60, 0.3);
+  }
+
+  .social-nav-item.active {
+    color: #ffedd5;
+    background: rgba(249, 115, 22, 0.2);
+    border-color: rgba(251, 146, 60, 0.52);
+  }
+
+  .social-left-footer {
+    @apply mt-auto space-y-2;
+  }
+
+  .social-user-chip {
+    @apply flex items-center gap-2 rounded-2xl p-2;
+    border: 1px solid rgba(251, 146, 60, 0.2);
+    background: rgba(21, 23, 30, 0.78);
+  }
+
+  .social-avatar {
+    @apply h-9 w-9 rounded-full border border-slate-600/60 object-cover;
+  }
+
+  .social-avatar-fallback {
+    @apply flex items-center justify-center text-sm font-semibold text-slate-100;
+    background: rgba(30, 41, 59, 0.9);
+  }
+
+  .social-mini-card {
+    @apply rounded-2xl p-3;
+    border: 1px solid rgba(251, 146, 60, 0.35);
+    background: rgba(124, 45, 18, 0.25);
+  }
+
+  .social-logout-btn {
+    @apply flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-300 transition-all;
+    border: 1px solid rgba(251, 146, 60, 0.2);
+    background: rgba(24, 25, 31, 0.72);
+  }
+
+  .social-logout-btn:hover {
+    @apply text-rose-200;
+    border-color: rgba(244, 63, 94, 0.4);
+    background: rgba(190, 24, 93, 0.16);
+  }
+
+  .social-main-column {
+    @apply flex h-full min-w-0 flex-col overflow-hidden rounded-3xl;
+    background: linear-gradient(180deg, rgba(22, 23, 30, 0.98), rgba(20, 22, 29, 0.92));
+    border: 1px solid var(--social-line);
+  }
+
+  .social-topbar {
+    @apply flex h-14 shrink-0 items-center justify-between border-b px-3 sm:px-4;
+    border-color: rgba(251, 146, 60, 0.23);
+    background: rgba(24, 26, 34, 0.84);
+  }
+
+  .social-icon-btn {
+    @apply inline-flex items-center justify-center rounded-xl p-2 text-slate-400 transition-colors;
+  }
+
+  .social-icon-btn:hover {
+    @apply text-slate-100;
+    background: rgba(65, 48, 36, 0.6);
+  }
+
+  .social-feed-scroll {
+    @apply flex-1 overflow-y-auto p-2 sm:p-3;
+  }
+
+  .social-right-rail {
+    @apply h-full space-y-3 rounded-3xl p-3;
+    border: 1px solid var(--social-line);
+    background: linear-gradient(180deg, rgba(20, 21, 29, 0.95), rgba(19, 20, 27, 0.82));
+  }
+
+  .social-right-card {
+    @apply rounded-2xl p-4;
+    border: 1px solid rgba(251, 146, 60, 0.2);
+    background: rgba(28, 30, 38, 0.72);
+  }
+
+  .social-right-title {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-slate-300;
+  }
+
+  .social-trend-item {
+    @apply rounded-xl px-3 py-2 text-sm text-slate-200;
+    border: 1px solid rgba(251, 146, 60, 0.2);
+    background: rgba(40, 43, 53, 0.66);
+  }
+
+  .login-matrix-bg {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.06), transparent 40%),
+      radial-gradient(circle at 80% 20%, rgba(255, 183, 3, 0.25), transparent 40%),
+      linear-gradient(180deg, #0b0f19 0%, #111b2e 60%, #0f172a 100%);
+  }
+
+  .login-matrix-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 183, 3, 0.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .login-terminal-panel {
+    @apply rounded-3xl;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: linear-gradient(180deg, rgba(17, 26, 41, 0.95), rgba(11, 17, 29, 0.92));
+    box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.04), 0 20px 60px rgba(3, 7, 17, 0.65);
+  }
+
+  .login-terminal-header {
+    @apply flex items-center px-4 py-3;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(13, 19, 34, 0.95);
+  }
+
+  .login-dot {
+    @apply inline-block h-2.5 w-2.5 rounded-full;
+  }
+
+  .login-auth-panel {
+    @apply rounded-3xl p-5 sm:p-6;
+    border: 1px solid rgba(251, 146, 60, 0.28);
+    background: linear-gradient(180deg, rgba(20, 14, 10, 0.9), rgba(18, 18, 21, 0.92));
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  }
+
+  .login-input {
+    @apply w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none transition-all;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(15, 22, 34, 0.8);
+  }
+
+  .login-input:focus {
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12);
+  }
+
+  .login-submit-btn {
+    @apply inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-dark-950 transition-all disabled:cursor-not-allowed disabled:opacity-50;
+    border: 1px solid rgba(255, 183, 3, 0.6);
+    background: linear-gradient(180deg, rgba(255, 183, 3, 0.85), rgba(255, 211, 140, 0.85));
+  }
+
+  .login-submit-btn:hover {
+    background: linear-gradient(180deg, rgba(255, 183, 3, 1), rgba(255, 211, 140, 0.9));
+  }
+
+  .login-github-btn {
+    @apply inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-50;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(15, 23, 42, 0.95);
+  }
+
+  .login-github-btn:hover {
+    background: rgba(23, 31, 50, 0.98);
   }
 
   /* ─── Form Elements ────────────────────────── */
   .h-input {
     @apply w-full rounded-xl px-4 py-3 text-white outline-none transition-all;
-    background: rgba(6, 6, 8, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(30, 31, 38, 0.78);
+    border: 1px solid rgba(251, 146, 60, 0.2);
   }
 
   .h-input::placeholder {
@@ -316,23 +579,23 @@
   }
 
   .h-input:focus {
-    border-color: rgba(6, 182, 212, 0.45);
+    border-color: rgba(251, 146, 60, 0.56);
     box-shadow:
-      0 0 0 3px rgba(6, 182, 212, 0.1),
-      0 0 12px rgba(6, 182, 212, 0.08);
+      0 0 0 3px rgba(251, 146, 60, 0.1),
+      0 0 12px rgba(251, 146, 60, 0.12);
   }
 
   /* ─── Buttons ──────────────────────────────── */
   .h-btn {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all;
-    background: rgba(26, 27, 34, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(40, 43, 52, 0.72);
+    border: 1px solid rgba(251, 146, 60, 0.2);
     color: rgba(209, 213, 219, 0.9);
   }
 
   .h-btn:hover {
-    background: rgba(26, 27, 34, 0.9);
-    border-color: rgba(6, 182, 212, 0.25);
+    background: rgba(49, 51, 61, 0.98);
+    border-color: rgba(251, 146, 60, 0.4);
     @apply text-white;
   }
 
@@ -344,16 +607,16 @@
 
   .h-btn-primary {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all;
-    background: rgba(6, 182, 212, 0.12);
-    border: 1px solid rgba(6, 182, 212, 0.25);
-    color: rgba(165, 243, 252, 0.9);
+    background: rgba(234, 88, 12, 0.16);
+    border: 1px solid rgba(251, 146, 60, 0.34);
+    color: rgba(255, 237, 213, 0.95);
   }
 
   .h-btn-primary:hover {
-    background: rgba(6, 182, 212, 0.2);
-    border-color: rgba(6, 182, 212, 0.4);
+    background: rgba(234, 88, 12, 0.25);
+    border-color: rgba(251, 146, 60, 0.54);
     @apply text-white;
-    box-shadow: 0 0 16px rgba(6, 182, 212, 0.15);
+    box-shadow: 0 0 16px rgba(251, 146, 60, 0.16);
   }
 
   .h-btn-danger {
